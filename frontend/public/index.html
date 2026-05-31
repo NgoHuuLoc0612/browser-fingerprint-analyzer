@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Browser Fingerprint Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root {
+  --bg-base:#050709;--bg-surface:#0c0f14;--bg-elevated:#121620;--bg-overlay:#1a2030;
+  --cyan:#00d4ff;--green:#00ff88;--red:#ff3366;--amber:#ffb800;--purple:#9945ff;
+  --border:rgba(255,255,255,0.10);--border-strong:rgba(255,255,255,0.18);
+  --text:#e8eaf0;--text-sec:#8892a4;--text-muted:#4a5568;
+  --font-mono:'Space Mono',monospace;--font-sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark;scroll-behavior:smooth}
+body{background:var(--bg-base);color:var(--text);font-family:var(--font-sans);font-size:14px;line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,0.012) 2px,rgba(0,212,255,0.012) 4px);pointer-events:none;z-index:9999}
+body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.025) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;animation:gridFlow 20s linear infinite}
+@keyframes gridFlow{0%{background-position:0 0}100%{background-position:40px 40px}}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg-surface)}
+::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.2);border-radius:3px}
+::selection{background:rgba(0,212,255,0.25)}
+
+/* Layout */
+#app{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column}
+header{position:sticky;top:0;z-index:100;background:rgba(12,15,20,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:16px}
+.logo-ring{width:32px;height:32px;border-radius:50%;border:1px solid rgba(0,212,255,0.4);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--cyan);background:rgba(0,212,255,0.06);animation:pulseGlow 2s ease-in-out infinite;flex-shrink:0}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 6px rgba(0,212,255,0.3)}50%{box-shadow:0 0 20px rgba(0,212,255,0.6),0 0 40px rgba(0,212,255,0.2)}}
+.logo-text{font-family:var(--font-mono);font-size:13px;font-weight:700;letter-spacing:.05em}
+.logo-text span{color:var(--cyan)}
+.logo-sub{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:.08em}
+.header-center{flex:1;max-width:440px}
+.progress-track{height:3px;background:var(--bg-overlay);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;border-radius:2px;background:linear-gradient(to right,var(--cyan),var(--green));transition:width .4s cubic-bezier(.4,0,.2,1)}
+.progress-label{font-family:var(--font-mono);font-size:10px;color:var(--cyan);display:flex;justify-content:space-between;margin-bottom:4px}
+.btn-scan{margin-left:auto;padding:8px 22px;background:transparent;border:1px solid var(--cyan);color:var(--cyan);font-family:var(--font-mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;border-radius:6px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.btn-scan::before{content:'';position:absolute;inset:0;background:rgba(0,212,255,0.08);transform:translateX(-100%);transition:transform .2s}
+.btn-scan:hover::before{transform:translateX(0)}
+.btn-scan:hover{box-shadow:0 0 20px rgba(0,212,255,0.3)}
+.btn-scan:disabled{opacity:.5;cursor:not-allowed}
+
+main{flex:1;max-width:1600px;margin:0 auto;width:100%;padding:20px;display:flex;flex-direction:column;gap:16px}
+
+/* Status dot */
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0}
+.dot.active{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulseGlow 2s ease-in-out infinite}
+.dot.warn{background:var(--amber)}
+.dot.error{background:var(--red)}
+.dot.idle{background:var(--text-muted)}
+
+/* Panel */
+.panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+.panel-el{background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:14px;padding:20px}
+.panel-header{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.panel-title{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em}
+
+/* Top viz row */
+.viz-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;height:280px}
+@media(max-width:900px){.viz-row{grid-template-columns:1fr;height:auto}}
+
+/* Tabs */
+.tab-bar{display:flex;gap:2px;background:var(--bg-surface);border-radius:8px;padding:3px;width:fit-content}
+.tab{padding:6px 14px;font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-radius:6px;cursor:pointer;color:var(--text-muted);border:none;background:transparent;transition:all .15s}
+.tab:hover{color:var(--text-sec);background:var(--bg-overlay)}
+.tab.active{color:var(--cyan);background:var(--bg-elevated);box-shadow:0 0 12px rgba(0,212,255,0.15)}
+
+/* Data rows */
+.data-row{display:flex;align-items:flex-start;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.data-row:last-child{border:none}
+.dk{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);flex-shrink:0;width:160px}
+.dv{font-family:var(--font-mono);font-size:11px;color:var(--text);text-align:right;word-break:break-all}
+
+/* Grid layouts */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+@media(max-width:1100px){.grid3{grid-template-columns:1fr 1fr}.grid6{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.grid2,.grid3,.grid6{grid-template-columns:1fr}}
+
+/* Stat card */
+.stat-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;inset:0;opacity:.07;pointer-events:none}
+.stat-val{font-family:var(--font-mono);font-size:22px;font-weight:700;line-height:1.1}
+.stat-unit{font-family:var(--font-mono);font-size:11px;opacity:.6;margin-left:2px}
+.stat-lbl{font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.12em;margin-top:4px}
+
+/* Badge */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.badge-green{background:rgba(0,255,136,.1);color:var(--green);border:1px solid rgba(0,255,136,.2)}
+.badge-red{background:rgba(255,51,102,.1);color:var(--red);border:1px solid rgba(255,51,102,.2)}
+.badge-amber{background:rgba(255,184,0,.1);color:var(--amber);border:1px solid rgba(255,184,0,.2)}
+.badge-cyan{background:rgba(0,212,255,.1);color:var(--cyan);border:1px solid rgba(0,212,255,.2)}
+.badge-purple{background:rgba(153,69,255,.1);color:var(--purple);border:1px solid rgba(153,69,255,.2)}
+
+/* Start overlay */
+#start-overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(5,7,9,.97);backdrop-filter:blur(16px)}
+.start-box{text-align:center;max-width:560px;padding:0 24px}
+.start-logo{width:120px;height:120px;margin:0 auto 32px;position:relative}
+.ring{position:absolute;border-radius:50%;border:1.5px solid}
+.ring-1{inset:0;border-color:rgba(0,212,255,.25);animation:spin 8s linear infinite}
+.ring-2{inset:12px;border-color:rgba(0,255,136,.3);animation:spin 5s linear infinite reverse}
+.ring-3{inset:24px;border-color:rgba(153,69,255,.4);animation:spin 3s linear infinite}
+.ring-center{position:absolute;inset:36px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--cyan)}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.start-title{font-family:var(--font-mono);font-size:26px;font-weight:700;letter-spacing:.06em;margin-bottom:8px}
+.start-title em{font-style:normal;color:var(--cyan);text-shadow:0 0 20px rgba(0,212,255,.5)}
+.start-desc{color:var(--text-sec);font-size:14px;line-height:1.7;margin-bottom:24px}
+.start-tags{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-bottom:28px}
+.start-tag{padding:3px 10px;border:1px solid var(--border);border-radius:4px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+.start-btn{padding:12px 40px;background:transparent;border:1px solid var(--cyan);color:var(--cyan);font-family:var(--font-mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;border-radius:8px;cursor:pointer;transition:all .2s;margin-bottom:14px}
+.start-btn:hover{box-shadow:0 0 30px rgba(0,212,255,.4);background:rgba(0,212,255,.06)}
+.start-note{font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+
+/* Risk meter */
+.risk-ring{position:relative;width:80px;height:80px}
+.risk-ring svg{transform:rotate(-90deg)}
+
+/* Progress bar */
+.pbar{height:3px;background:var(--bg-overlay);border-radius:2px;overflow:hidden}
+.pbar-fill{height:100%;border-radius:2px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+/* Skeleton */
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.skeleton{background:linear-gradient(90deg,var(--bg-surface) 25%,var(--bg-elevated) 50%,var(--bg-surface) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
+
+/* Entropy field bars */
+.field-bar-wrap{display:flex;align-items:center;gap:8px}
+.field-bar{flex:1;height:4px;background:var(--bg-overlay);border-radius:2px;overflow:hidden}
+.field-bar-fill{height:100%;border-radius:2px}
+
+/* Perm grid */
+.perm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
+.perm-item{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-family:var(--font-mono);font-size:10px}
+.perm-granted{background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.15)}
+.perm-denied{background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.15)}
+.perm-prompt{background:var(--bg-elevated);border:1px solid var(--border)}
+.perm-unsupported{background:var(--bg-surface);border:1px solid rgba(255,255,255,.04);opacity:.5}
+
+/* Neon text */
+.neon-cyan{color:var(--cyan);text-shadow:0 0 8px rgba(0,212,255,.7),0 0 20px rgba(0,212,255,.3)}
+.neon-green{color:var(--green);text-shadow:0 0 8px rgba(0,255,136,.7)}
+
+/* Canvas */
+#globe-canvas,#heatmap-canvas,#radar-canvas{width:100%;height:100%;display:block}
+
+footer{border-top:1px solid var(--border);padding:12px 20px;display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+
+/* Warning box */
+.warn-box{background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.25);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:11px;color:var(--amber)}
+
+/* Scan-line anim */
+.scanline{position:fixed;top:0;left:0;right:0;height:2px;background:linear-gradient(transparent,rgba(0,212,255,.4),transparent);animation:scanAnim 4s linear infinite;pointer-events:none;z-index:9998}
+@keyframes scanAnim{0%{transform:translateY(-4px)}100%{transform:translateY(100vh)}}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+
+<!-- Start overlay -->
+<div id="start-overlay">
+  <div class="start-box">
+    <div class="start-logo">
+      <div class="ring ring-1"></div>
+      <div class="ring ring-2"></div>
+      <div class="ring ring-3"></div>
+      <div class="ring-center">FP</div>
+    </div>
+    <h1 class="start-title">BROWSER<br/><em>FINGERPRINT ANALYZER</em></h1>
+    <p class="start-desc">Advanced entropy clustering, anomaly detection via Autoencoder + ONNX Runtime, probabilistic identity matching with SIMD cosine similarity, FAISS embedding, CSR Graph, EMA temporal drift, MLP calibrator — powered by WebGL2 GLSL · WebGPU WGSL · WASM SIMD C++ · Web Workers · SharedArrayBuffer · OffscreenCanvas</p>
+    <div class="start-tags">
+      <span class="start-tag">WebGL2 + GLSL</span><span class="start-tag">WebGPU + WGSL</span>
+      <span class="start-tag">WASM SIMD C++</span><span class="start-tag">SharedArrayBuffer</span>
+      <span class="start-tag">OffscreenCanvas</span><span class="start-tag">Count-Min Sketch</span>
+      <span class="start-tag">FAISS Embedding</span><span class="start-tag">CSR Graph</span>
+      <span class="start-tag">ONNX Runtime</span><span class="start-tag">MLP Calibrator</span>
+      <span class="start-tag">Trusted Types</span><span class="start-tag">COOP / COEP</span>
+    </div>
+    <button class="start-btn" onclick="beginAnalysis()">▶ Begin Analysis</button>
+    <div class="start-note">All processing runs locally. No data transmitted.</div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="logo-ring">FP</div>
+    <div>
+      <div class="logo-text">BROWSER<span>.</span>FINGERPRINT</div>
+      <div class="logo-sub">ANALYZER v2.0 — PRODUCTION</div>
+    </div>
+    <div class="header-center" id="progress-wrap" style="display:none">
+      <div class="progress-label">
+        <span id="progress-label-text">Initializing...</span>
+        <span id="progress-pct">0%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progress-bar" style="width:0%"></div></div>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+      <div id="header-stats" style="display:none;font-family:var(--font-mono);font-size:11px;gap:16px;display:flex">
+        <span>Hash: <span id="hdr-hash" style="color:var(--cyan)">—</span></span>
+        <span>Entropy: <span id="hdr-entropy" style="color:var(--green)">—</span></span>
+        <span>Risk: <span id="hdr-risk">—</span></span>
+      </div>
+      <button class="btn-scan" id="scan-btn" onclick="beginAnalysis()">▶ Analyze</button>
+    </div>
+  </header>
+
+  <main id="main-content" style="display:none">
+    <!-- Viz row -->
+    <div class="viz-row">
+      <div class="panel-el" style="position:relative;overflow:hidden">
+        <canvas id="globe-canvas"></canvas>
+        <div style="position:absolute;bottom:12px;left:16px;right:16px;display:flex;justify-content:space-between">
+          <div><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">ENTROPY</div>
+            <div id="globe-entropy" style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--cyan)">—</div></div>
+          <div style="text-align:right"><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">RISK</div>
+            <div id="globe-risk" style="font-family:var(--font-mono);font-size:18px;font-weight:700">—</div></div>
+        </div>
+      </div>
+      <div class="panel-el" style="position:relative;overflow:hidden;min-height:260px">
+        <div style="position:absolute;top:14px;left:16px;font-family:var(--font-mono);font-size:10px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em;z-index:2">Multi-Dim Radar</div>
+        <canvas id="radar-canvas" style="width:100%;height:100%;display:block;min-height:260px"></canvas>
+        <div style="position:absolute;bottom:8px;right:10px;display:flex;align-items:center;gap:4px">
+          <div id="webgpu-dot" class="dot idle"></div>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted)" id="webgpu-label">WebGPU</span>
+        </div>
+      </div>
+      <div class="panel-el" style="position:relative;overflow:hidden">
+        <canvas id="heatmap-canvas"></canvas>
+        <div style="position:absolute;bottom:8px;right:10px;left:10px;display:flex;align-items:center;gap:6px">
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">0.0</span>
+          <div style="flex:1;height:5px;border-radius:3px;background:linear-gradient(to right,#000a11,#00d4ff,#00ff88,#ffb800,#ff3366)"></div>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">1.0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick stats -->
+    <div class="grid6" id="stat-cards">
+      <div class="stat-card" id="sc-entropy"><div style="position:absolute;inset:0;background:radial-gradient(circle,rgba(0,212,255,.15),transparent 70%);opacity:.6"></div><div class="stat-val" style="color:var(--cyan)" id="sc-entropy-val">—</div><div class="stat-lbl">Entropy Bits</div></div>
+      <div class="stat-card" id="sc-unique"><div style="position:absolute;inset:0;background:radial-gradient(circle,rgba(153,69,255,.15),transparent 70%);opacity:.6"></div><div class="stat-val" style="color:var(--purple)" id="sc-unique-val">—</div><div class="stat-lbl">Uniqueness %</div></div>
+      <div class="stat-card" id="sc-risk"><div style="position:absolute;inset:0;background:radial-gradient(circle,rgba(255,51,102,.15),transparent 70%);opacity:.6"></div><div class="stat-val" id="sc-risk-val">—</div><div class="stat-lbl">Risk Score</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--purple)" id="sc-fonts-val">—</div><div class="stat-lbl">Fonts Detected</div></div>
+      <div class="stat-card"><div class="stat-val" id="sc-ext-val">—</div><div class="stat-lbl">Extensions</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--text-muted)" id="sc-dur-val">—</div><div class="stat-lbl">Scan Duration</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <button class="tab active" onclick="switchTab('overview',this)">Overview</button>
+      <button class="tab" onclick="switchTab('gpu',this)">GPU / WebGL</button>
+      <button class="tab" onclick="switchTab('analysis',this)">ML Analysis</button>
+      <button class="tab" onclick="switchTab('security',this)">Security Lab</button>
+      <button class="tab" onclick="switchTab('entropy',this)">Entropy Table</button>
+    </div>
+
+    <!-- Tab: Overview -->
+    <div id="tab-overview" class="grid2" style="gap:16px">
+      <div class="panel-el space-y-3">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Fingerprint Identity</span></div>
+        <div id="identity-rows"></div>
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:10px;margin-bottom:4px">
+            <span style="color:var(--text-muted)">Entropy Score</span>
+            <span id="entropy-score-val" style="color:var(--cyan)">—</span>
+          </div>
+          <div class="pbar"><div class="pbar-fill" id="entropy-bar" style="width:0%;background:linear-gradient(to right,var(--cyan),var(--green))"></div></div>
+        </div>
+      </div>
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Browser & OS</span></div>
+        <div id="browser-rows"></div>
+      </div>
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Screen & Touch</span></div>
+        <div id="screen-rows"></div>
+      </div>
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Network & Storage</span></div>
+        <div id="network-rows"></div>
+      </div>
+      <div class="panel-el" style="grid-column:1/-1">
+        <div class="panel-header"><div class="dot idle"></div><span class="panel-title">Permissions (25+)</span></div>
+        <div class="perm-grid" id="perm-grid"></div>
+      </div>
+    </div>
+
+    <!-- Tab: GPU -->
+    <div id="tab-gpu" style="display:none" class="grid2">
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">GPU Info</span></div>
+        <div id="gpu-rows"></div>
+      </div>
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">WebGL Hashes</span></div>
+        <div id="webgl-hash-rows"></div>
+      </div>
+      <div class="panel-el" style="grid-column:1/-1">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">GL Extensions (<span id="ext-count">0</span>)</span></div>
+        <div id="ext-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div>
+      </div>
+    </div>
+
+    <!-- Tab: ML Analysis -->
+    <div id="tab-analysis" style="display:none;display:none" class="grid3">
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Autoencoder</span></div>
+        <div id="anomaly-rows"></div>
+        <div style="margin-top:12px">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-bottom:6px">Encoded Vector (4D)</div>
+          <div id="encoded-vec" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px"></div>
+        </div>
+      </div>
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Identity Match</span></div>
+        <div id="identity-match-rows"></div>
+        <div style="margin-top:12px">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-bottom:4px">EMA Vector</div>
+          <div id="ema-vec-bars" style="display:flex;gap:2px;align-items:flex-end;height:32px"></div>
+        </div>
+      </div>
+      <div class="panel-el">
+        <div class="panel-header"><div class="dot active"></div><span class="panel-title">Entropy Cluster</span></div>
+        <div id="cluster-rows"></div>
+        <div style="margin-top:12px">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-bottom:4px">Centroid Vector</div>
+          <div id="centroid-bars" style="display:flex;gap:2px;align-items:flex-end;height:32px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Security -->
+    <div id="tab-security" style="display:none">
+      <div class="grid2" style="gap:14px">
+        <div class="panel-el">
+          <div class="panel-header"><span class="panel-title">Security Features</span></div>
+          <div id="security-rows"></div>
+        </div>
+        <div class="panel-el">
+          <div class="panel-header"><span class="panel-title">Anti-Tamper & DevTools</span></div>
+          <div id="tamper-rows"></div>
+        </div>
+        <div class="panel-el">
+          <div class="panel-header"><span class="panel-title">Extension Detection</span></div>
+          <div id="ext-detect-rows"></div>
+        </div>
+        <div class="panel-el">
+          <div class="panel-header"><span class="panel-title">WebRTC Leaks</span></div>
+          <div id="webrtc-rows"></div>
+        </div>
+        <div class="panel-el" style="grid-column:1/-1">
+          <div class="panel-header"><span class="panel-title">Risk Flags</span></div>
+          <div id="risk-flags" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+      </div>
+      <div id="security-lab-container" style="margin-top:14px"></div>
+    </div>
+
+    <!-- Tab: Entropy Table -->
+    <div id="tab-entropy" style="display:none">
+      <div class="panel-el">
+        <div class="panel-header"><span class="panel-title">Field Entropy Contributions</span></div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em">
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06)">Field</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06)">Value</th>
+              <th style="text-align:right;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06)">Entropy (bits)</th>
+              <th style="padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);min-width:140px">Weight</th>
+              <th style="text-align:center;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06)">Level</th>
+            </tr>
+          </thead>
+          <tbody id="entropy-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <span>Browser Fingerprint Analyzer — Vue 3 · Nuxt · WebGL2 · WebGPU · WASM SIMD · Three.js · Fastify · tRPC · Redis · PostgreSQL</span>
+    <span>Session scans: <span id="scan-count" style="color:var(--cyan)">0</span></span>
+  </footer>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// FP = global state
+// ════════════════════════════════════════════════════════════════════════════
+const FP = { data: null, analysis: null, scanCount: 0, collecting: false }
+
+// ── Hash
+function fnv1a(s) {
+  let h = 0x811c9dc5 >>> 0
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8,'0')
+}
+function randHex(n=16){ const a=new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join('') }
+
+// ── Progress
+let progressTimer
+function setProgress(label, pct) {
+  document.getElementById('progress-wrap').style.display = 'block'
+  document.getElementById('progress-label-text').textContent = label
+  document.getElementById('progress-pct').textContent = pct + '%'
+  document.getElementById('progress-bar').style.width = pct + '%'
+}
+
+// ── Tab switching
+function switchTab(name, btn) {
+  ['overview','gpu','analysis','security','entropy'].forEach(t => {
+    const el = document.getElementById('tab-' + t)
+    if (el) el.style.display = t === name ? (name === 'overview' || name === 'gpu' || name === 'security' || name === 'entropy' ? 'grid' : t === 'analysis' ? 'grid' : 'block') : 'none'
+  })
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+}
+
+// ── Data row builder
+function dr(key, val, valColor) {
+  const color = valColor || 'var(--text)'
+  return `<div class="data-row"><span class="dk">${key}</span><span class="dv" style="color:${color}">${val}</span></div>`
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COLLECTION
+// ════════════════════════════════════════════════════════════════════════════
+async function collectAll() {
+  const t0 = Date.now()
+  setProgress('Browser info', 5)
+  const browser = collectBrowser()
+  const os = collectOS()
+
+  setProgress('GPU / WebGL probing', 18)
+  const gpu = collectGPU()
+
+  setProgress('Canvas fingerprint', 30)
+  const canvas = collectCanvas()
+
+  setProgress('WebGL fingerprint', 42)
+  const webgl = collectWebGL()
+
+  setProgress('Audio fingerprint', 54)
+  const audio = await collectAudio()
+
+  setProgress('Font detection', 64)
+  const fonts = collectFonts()
+
+  setProgress('Screen & locale', 72)
+  const screen = collectScreen()
+  const tz = collectTimezone()
+  const touch = collectTouch()
+
+  setProgress('Storage & WebRTC', 80)
+  const storage = collectStorage()
+  const webrtc = await collectWebRTC()
+
+  setProgress('Permissions', 88)
+  const permissions = await collectPermissions()
+
+  setProgress('Security analysis', 93)
+  const security = collectSecurity()
+  const extensions = collectExtensions()
+  const devtools = collectDevTools()
+  const antiTamper = collectAntiTamper()
+
+  setProgress('Computing uniqueness', 97)
+  const uniqueness = computeUniqueness({ browser, os, gpu, canvas, webgl, audio, fonts, screen, tz, touch, storage, webrtc, permissions, security, extensions, devtools, antiTamper })
+
+  setProgress('Complete', 100)
+
+  return {
+    visitorId: 'v_' + randHex(),
+    sessionId: 's_' + randHex(),
+    timestamp: new Date().toISOString(),
+    collectionDuration: Date.now() - t0,
+    browser, os, gpu, canvas, webgl, audio, fonts,
+    screen, timezone: tz, touch, storage, webrtc, permissions,
+    security, extensions, devtools, antiTamper, uniqueness
+  }
+}
+
+function collectBrowser() {
+  const ua = navigator.userAgent
+  const isChrome = /Chrome\/(\d+)/.test(ua) && !/Edg\/|OPR\//.test(ua)
+  const isFF = /Firefox\/(\d+)/.test(ua)
+  const isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua)
+  const isEdge = /Edg\/(\d+)/.test(ua)
+  const isBrave = !!navigator.brave
+  let name='Unknown',ver='',engine='Unknown'
+  if(isBrave){name='Brave';ver=(ua.match(/Chrome\/(\d+)/)||['',''])[1];engine='Blink'}
+  else if(isEdge){name='Edge';ver=(ua.match(/Edg\/(\d+)/)||['',''])[1];engine='Blink'}
+  else if(isChrome){name='Chrome';ver=(ua.match(/Chrome\/(\d+)/)||['',''])[1];engine='Blink'}
+  else if(isFF){name='Firefox';ver=(ua.match(/Firefox\/(\d+)/)||['',''])[1];engine='Gecko'}
+  else if(isSafari){name='Safari';ver=(ua.match(/Version\/(\d+)/)||['',''])[1];engine='WebKit'}
+  return {
+    userAgent:ua,vendor:navigator.vendor,platform:navigator.platform,
+    engine,browserName:name,browserVersion:ver,
+    isHeadless:!!(/(HeadlessChrome|PhantomJS)/.test(ua)||navigator.webdriver),
+    isBot:!!(/(bot|crawl|spider|headless)/i.test(ua)||navigator.webdriver),
+    webdriver:!!navigator.webdriver,
+    languages:Array.from(navigator.languages||[navigator.language]),
+    cookieEnabled:navigator.cookieEnabled,
+    doNotTrack:navigator.doNotTrack,
+    hardwareConcurrency:navigator.hardwareConcurrency||0,
+    deviceMemory:navigator.deviceMemory,
+    maxTouchPoints:navigator.maxTouchPoints||0,
+    pdfViewerEnabled:!!navigator.pdfViewerEnabled,
+    plugins:Array.from(navigator.plugins).map(p=>({name:p.name,filename:p.filename})),
+  }
+}
+
+function collectOS() {
+  const ua = navigator.userAgent, p = navigator.platform
+  let name='Unknown',ver='',arch='x64'
+  if(/Win/.test(p)){name='Windows';if(/Windows NT 10/.test(ua))ver='10/11';else if(/NT 6\.1/.test(ua))ver='7'}
+  else if(/Mac/.test(p)){name='macOS';const m=ua.match(/Mac OS X ([\d_]+)/);ver=m?m[1].replace(/_/g,'.'):''}
+  else if(/Linux/.test(p)){name=/Android/.test(ua)?'Android':'Linux'}
+  else if(/iPhone|iPad/.test(ua)){name='iOS';const m=ua.match(/OS ([\d_]+)/);ver=m?m[1].replace(/_/g,'.'):''}
+  if(/ARM/.test(ua))arch='ARM';else if(/WOW64|Win64/.test(ua))arch='x64'
+  return {name,version:ver,architecture:arch,platform:p,mobile:/Mobi|Android|iPhone/.test(ua),touchDevice:navigator.maxTouchPoints>0}
+}
+
+function collectGPU() {
+  const c=document.createElement('canvas')
+  const gl=c.getContext('webgl2')||c.getContext('webgl')
+  if(!gl)return{vendor:'N/A',renderer:'N/A',unmaskedVendor:'N/A',unmaskedRenderer:'N/A',webglVersion:'none',webgl2Supported:false,webgpuSupported:!!navigator.gpu,maxTextureSize:0,extensions:[],shadingLanguageVersion:'',antialiasing:false,redBits:0,greenBits:0,blueBits:0,alphaBits:0,depthBits:0,stencilBits:0,maxViewportDims:[0,0]}
+  const dbg=gl.getExtension('WEBGL_debug_renderer_info')
+  return {
+    vendor:gl.getParameter(gl.VENDOR),renderer:gl.getParameter(gl.RENDERER),
+    unmaskedVendor:dbg?gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL):'masked',
+    unmaskedRenderer:dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):'masked',
+    webglVersion:gl instanceof WebGL2RenderingContext?'WebGL 2.0':'WebGL 1.0',
+    webgl2Supported:gl instanceof WebGL2RenderingContext,
+    webgpuSupported:!!navigator.gpu,
+    maxTextureSize:gl.getParameter(gl.MAX_TEXTURE_SIZE),
+    extensions:gl.getSupportedExtensions()||[],
+    shadingLanguageVersion:gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+    antialiasing:gl.getContextAttributes()?.antialias||false,
+    redBits:gl.getParameter(gl.RED_BITS),greenBits:gl.getParameter(gl.GREEN_BITS),
+    blueBits:gl.getParameter(gl.BLUE_BITS),alphaBits:gl.getParameter(gl.ALPHA_BITS),
+    depthBits:gl.getParameter(gl.DEPTH_BITS),stencilBits:gl.getParameter(gl.STENCIL_BITS),
+    maxViewportDims:Array.from(gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0]),
+    maxVertexAttribs:gl.getParameter(gl.MAX_VERTEX_ATTRIBS),
+    maxVaryingVectors:gl.getParameter(gl.MAX_VARYING_VECTORS),
+  }
+}
+
+function collectCanvas() {
+  const c=document.createElement('canvas');c.width=400;c.height=150
+  const ctx=c.getContext('2d')
+  ctx.fillStyle='#1a1a2e';ctx.fillRect(0,0,400,150)
+  const samples=[
+    {text:'BrowserFingerprint',font:'18px Arial',fill:'#00d4ff',x:10,y:30},
+    {text:'Cwm fjordbank glyphs vext quiz',font:'14px Georgia',fill:'#00ff88',x:10,y:58},
+    {text:'狐狸跳过了懒狗 Ñoño',font:'13px Times New Roman',fill:'#ff3366',x:10,y:84},
+    {text:'①②③④⑤⑥⑦⑧⑨⑩',font:'12px Verdana',fill:'#ffb800',x:10,y:108},
+  ]
+  samples.forEach(s=>{ctx.font=s.font;ctx.fillStyle=s.fill;ctx.fillText(s.text,s.x,s.y)})
+  ctx.beginPath();ctx.arc(330,75,35,0,Math.PI*2);ctx.strokeStyle='rgba(0,212,255,.6)';ctx.lineWidth=2;ctx.stroke()
+  const grad=ctx.createLinearGradient(0,130,400,150)
+  grad.addColorStop(0,'rgba(0,212,255,.4)');grad.addColorStop(.5,'rgba(0,255,136,.4)');grad.addColorStop(1,'rgba(255,51,102,.4)')
+  ctx.fillStyle=grad;ctx.fillRect(0,130,400,20)
+  const imgData=ctx.getImageData(0,0,400,150)
+  const hash=fnv1a(Array.from(imgData.data).slice(0,800).map(v=>Math.round(v)).join(','))
+  ctx.font='16px Arial';const tm=ctx.measureText('BrowserFingerprint')
+  return {
+    dataURL:c.toDataURL().slice(0,50)+'...',hash,
+    geometryHash:fnv1a('geometry:'+hash),
+    imageDataHash:hash,
+    offscreenSupported:typeof OffscreenCanvas!=='undefined',
+    workletSupported:typeof CSS!=='undefined'&&'paintWorklet' in CSS,
+    textMetrics:{width:tm.width,ascent:tm.actualBoundingBoxAscent,descent:tm.actualBoundingBoxDescent}
+  }
+}
+
+function collectWebGL() {
+  const c=document.createElement('canvas');c.width=4;c.height=4
+  const gl=c.getContext('webgl2')||c.getContext('webgl')
+  if(!gl)return{contextHash:'unsupported',parametersHash:'unsupported',vertexShaderHash:'unsupported',fragmentShaderHash:'unsupported',textureHash:'unsupported',bufferHash:'unsupported',glParameters:{},supportedExtensions:[],compressedTextureFormats:[],precisionsHash:'unsupported',shaderPrecisions:[]}
+  const vs='attribute vec4 a_pos;void main(){gl_Position=a_pos;gl_PointSize=1.0;}'
+  const fs='precision mediump float;void main(){gl_FragColor=vec4(0.0,0.83,1.0,1.0);}'
+  let contextHash='render_failed'
+  try{
+    const v=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(v,vs);gl.compileShader(v)
+    const f=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(f,fs);gl.compileShader(f)
+    const p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.useProgram(p)
+    const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf)
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,.5,0,1,-.5,-.5,0,1,.5,-.5,0,1]),gl.STATIC_DRAW)
+    gl.clearColor(.02,.04,.08,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.drawArrays(gl.TRIANGLES,0,3)
+    const px=new Uint8Array(16);gl.readPixels(0,0,2,2,gl.RGBA,gl.UNSIGNED_BYTE,px)
+    contextHash=fnv1a(Array.from(px).join(','))
+  }catch(e){contextHash=fnv1a('err:'+e.message)}
+  const params={MAX_TEXTURE_SIZE:gl.getParameter(gl.MAX_TEXTURE_SIZE),MAX_VERTEX_ATTRIBS:gl.getParameter(gl.MAX_VERTEX_ATTRIBS),MAX_VARYING_VECTORS:gl.getParameter(gl.MAX_VARYING_VECTORS),MAX_FRAGMENT_UNIFORM_VECTORS:gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS),SHADING_LANGUAGE_VERSION:gl.getParameter(gl.SHADING_LANGUAGE_VERSION)}
+  const prec=[];const sts=[gl.VERTEX_SHADER,gl.FRAGMENT_SHADER];const pts=[gl.LOW_FLOAT,gl.MEDIUM_FLOAT,gl.HIGH_FLOAT]
+  const stn=['VERTEX','FRAGMENT'];const ptn=['LOW_FLOAT','MEDIUM_FLOAT','HIGH_FLOAT']
+  for(let s=0;s<2;s++)for(let p=0;p<3;p++){try{const r=gl.getShaderPrecisionFormat(sts[s],pts[p]);if(r)prec.push({shaderType:stn[s],precisionType:ptn[p],rangeMin:r.rangeMin,rangeMax:r.rangeMax,precision:r.precision})}catch(e){}}
+  return{contextHash,parametersHash:fnv1a(JSON.stringify(params)),vertexShaderHash:fnv1a(vs),fragmentShaderHash:fnv1a(fs),textureHash:fnv1a('tex:'+contextHash),bufferHash:fnv1a(contextHash+JSON.stringify(params)),glParameters:params,supportedExtensions:gl.getSupportedExtensions()||[],compressedTextureFormats:Array.from(gl.getParameter(gl.COMPRESSED_TEXTURE_FORMATS)||[]),precisionsHash:fnv1a(JSON.stringify(prec)),shaderPrecisions:prec}
+}
+
+async function collectAudio() {
+  try{
+    const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)throw new Error('no AudioContext')
+    const ctx=new Ctx();const osc=ctx.createOscillator();const comp=ctx.createDynamicsCompressor();const an=ctx.createAnalyser();const gain=ctx.createGain()
+    osc.type='triangle';osc.frequency.value=10000;comp.threshold.value=-50;comp.knee.value=40;comp.ratio.value=12;gain.gain.value=0
+    osc.connect(comp);comp.connect(an);an.connect(gain);gain.connect(ctx.destination);osc.start()
+    an.fftSize=4096;await new Promise(r=>setTimeout(r,100))
+    const fb=new Float32Array(an.frequencyBinCount);an.getFloatFrequencyData(fb)
+    const tb=new Float32Array(an.fftSize);an.getFloatTimeDomainData(tb)
+    osc.stop();await ctx.close()
+    const oscHash=fnv1a(Array.from(tb.slice(0,80)).map(v=>Math.round(v*1e5)).join(','))
+    const compHash=fnv1a([comp.threshold.value,comp.knee.value,comp.ratio.value,comp.attack.value,comp.release.value].join(','))
+    return{oscillatorHash:oscHash,compressorHash:compHash,analyserHash:fnv1a(an.fftSize+':'+an.frequencyBinCount),dynamicsHash:fnv1a(oscHash+compHash),audioContextState:'closed',sampleRate:ctx.sampleRate,channelCount:ctx.destination.channelCount,maxChannelCount:ctx.destination.maxChannelCount,baseLatency:ctx.baseLatency||0,bufferHash:fnv1a(Array.from(fb.slice(0,80)).map(v=>Math.round(v*100)).join(',')),supported:true}
+  }catch(e){return{oscillatorHash:'unsupported',compressorHash:'unsupported',analyserHash:'unsupported',dynamicsHash:'unsupported',audioContextState:'unsupported',sampleRate:0,channelCount:0,maxChannelCount:0,baseLatency:0,bufferHash:'unsupported',supported:false}}
+}
+
+function collectFonts() {
+  const fonts=['Arial','Arial Black','Calibri','Cambria','Comic Sans MS','Consolas','Courier New','Garamond','Georgia','Helvetica','Impact','Lucida Console','Palatino Linotype','Segoe UI','Tahoma','Times New Roman','Trebuchet MS','Verdana','Gill Sans','Futura','Baskerville','Helvetica Neue','Century Gothic','Menlo','Monaco','Ubuntu','Roboto','Lato','Open Sans','Fira Code','Source Code Pro','DejaVu Sans','Noto Sans','Droid Sans','Optima','Cochin','Didot','Papyrus','Skia','STHeiti','Hiragino Kaku Gothic Pro','Meiryo','MS Gothic','Malgun Gothic','Nirmala UI','Nyala']
+  const test='mmmmmmmmmmlli';const c=document.createElement('canvas');const ctx=c.getContext('2d')
+  const bases=['monospace','sans-serif','serif']
+  const baseW={}; bases.forEach(b=>{ctx.font=`72px ${b}`;baseW[b]=ctx.measureText(test).width})
+  const detected=fonts.filter(f=>{for(const b of bases){ctx.font=`72px '${f}',${b}`;if(ctx.measureText(test).width!==baseW[b])return true}return false})
+  return{detectedFonts:detected,fontCount:detected.length,fingerprintHash:fnv1a(detected.sort().join(',')),measurementMethod:'canvas'}
+}
+
+function collectScreen() {
+  const s=screen,dpr=window.devicePixelRatio||1
+  let gamut='srgb';if(matchMedia('(color-gamut:p3)').matches)gamut='p3';if(matchMedia('(color-gamut:rec2020)').matches)gamut='rec2020'
+  return{width:s.width,height:s.height,availWidth:s.availWidth,availHeight:s.availHeight,colorDepth:s.colorDepth,pixelDepth:s.pixelDepth,devicePixelRatio:dpr,orientation:screen.orientation?.type||'unknown',orientationAngle:screen.orientation?.angle||0,isHDR:matchMedia('(dynamic-range:high)').matches,colorGamut:gamut,dynamicRange:matchMedia('(dynamic-range:high)').matches?'high':'standard',innerWidth:window.innerWidth,innerHeight:window.innerHeight,outerWidth:window.outerWidth,outerHeight:window.outerHeight}
+}
+
+function collectTimezone() {
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone
+  const off=-new Date().getTimezoneOffset()
+  const loc=Intl.DateTimeFormat().resolvedOptions().locale||navigator.language
+  const jan=new Date(new Date().getFullYear(),0,1).getTimezoneOffset()
+  const jul=new Date(new Date().getFullYear(),6,1).getTimezoneOffset()
+  return{timezone:tz,timezoneOffset:off,locale:loc,language:navigator.language,languages:Array.from(navigator.languages||[navigator.language]),dstActive:Math.max(jan,jul)!==new Date().getTimezoneOffset(),hour12:!!new Intl.DateTimeFormat(loc,{hour:'numeric'}).resolvedOptions().hour12,jsTimeDrift:performance.now()-Math.floor(performance.now())}
+}
+
+function collectTouch(){return{supported:'ontouchstart' in window||navigator.maxTouchPoints>0,maxPoints:navigator.maxTouchPoints,touchEvent:'ontouchstart' in window,pointerEvent:!!window.PointerEvent,forceTouch:'onwebkitmouseforcechanged' in window}}
+
+function collectStorage(){
+  let ls=false,ss=false,idb=false
+  try{localStorage.setItem('__t','1');ls=localStorage.getItem('__t')==='1';localStorage.removeItem('__t')}catch(e){}
+  try{sessionStorage.setItem('__t','1');ss=sessionStorage.getItem('__t')==='1';sessionStorage.removeItem('__t')}catch(e){}
+  try{idb=typeof indexedDB!=='undefined'}catch(e){}
+  return{localStorage:ls,sessionStorage:ss,indexedDB:idb,webSQL:!!window.openDatabase,cookies:navigator.cookieEnabled,serviceWorker:'serviceWorker' in navigator,cacheAPI:'caches' in window,persistentStorage:false}
+}
+
+async function collectWebRTC(){
+  const ips=[];let ip4=false,ip6=false,mdns=false
+  try{
+    const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]})
+    pc.createDataChannel('')
+    const offer=await pc.createOffer();await pc.setLocalDescription(offer)
+    await new Promise(r=>{const t=setTimeout(r,2000);pc.onicecandidate=e=>{if(!e.candidate){clearTimeout(t);r();return}
+      const c=e.candidate.candidate
+      ;(c.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/g)||[]).forEach(ip=>{if(!ips.includes(ip)){ips.push(ip);ip4=true}})
+      ;(c.match(/([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}/gi)||[]).forEach(ip=>{if(!ips.includes(ip)){ips.push(ip);ip6=true}})
+      if(/\.local/i.test(c))mdns=true
+    }});pc.close()
+  }catch(e){}
+  let devs=[];try{devs=(await navigator.mediaDevices.enumerateDevices()).map(d=>({kind:d.kind,label:d.label}))}catch(e){}
+  return{localIPs:ips,ipv4Leaked:ip4,ipv6Leaked:ip6,mDNSEnabled:mdns,supported:typeof RTCPeerConnection!=='undefined',mediaDevices:devs,iceServersReachable:ips.length>0}
+}
+
+async function collectPermissions(){
+  const names=['geolocation','notifications','camera','microphone','clipboard-read','clipboard-write','accelerometer','gyroscope','magnetometer','screen-wake-lock','payment-handler','idle-detection','nfc','display-capture','local-fonts','storage-access','periodic-background-sync','push','midi','bluetooth','persistent-storage','ambient-light-sensor','background-sync','speaker','window-management']
+  const res=[]
+  for(const n of names){try{const s=await navigator.permissions.query({name:n});res.push({name:n,state:s.state})}catch(e){res.push({name:n,state:'unsupported'})}}
+  return res
+}
+
+function collectSecurity(){return{trustedTypes:!!window.trustedTypes,crossOriginIsolated:window.crossOriginIsolated===true,secureContext:window.isSecureContext,https:location.protocol==='https:',hsts:location.protocol==='https:',coep:window.crossOriginIsolated===true,coop:window.crossOriginIsolated===true,sriSupported:'integrity' in HTMLScriptElement.prototype}}
+
+function collectExtensions(){
+  const det=[]
+  try{const d=document.createElement('div');d.innerHTML='&nbsp;';d.className='adsbox pub_300x250 pub_300x250m pub_728x90 text-ad textAd text_ad text_ads';d.style.cssText='position:absolute;top:-1000px';document.body.appendChild(d);if(d.offsetHeight===0)det.push({name:'AdBlocker',confidence:.9,indicator:'dom'});document.body.removeChild(d)}catch(e){}
+  if(document.querySelector('grammarly-extension,grammarly-desktop-integration'))det.push({name:'Grammarly',confidence:.95,indicator:'dom'})
+  return{detected:det,score:det.length/10,modifiedAPIs:[],modifiedDOM:det.length>0}
+}
+
+function collectDevTools(){
+  const wt=window.outerWidth-window.innerWidth>160
+  const ht=window.outerHeight-window.innerHeight>160
+  let cssMod=false;try{cssMod=console.log.toString().indexOf('[native code]')===-1}catch(e){}
+  return{open:wt||ht,method:wt||ht?'size':'none',widthThreshold:wt,heightThreshold:ht,firebug:!!window.Firebug?.chrome?.isInitialized,devtoolsExtension:!!(window.__REACT_DEVTOOLS_GLOBAL_HOOK__||window.__VUE_DEVTOOLS_GLOBAL_HOOK__),consoleModified:cssMod}
+}
+
+function collectAntiTamper(){
+  const susp=[]
+  let protoOk=true;try{if(Object.getPrototypeOf(navigator)!==Navigator.prototype){protoOk=false;susp.push('navigator.__proto__')}}catch(e){}
+  const auto=!!(navigator.webdriver||window.domAutomation||window.domAutomationController||window.phantom||window.callPhantom||window._phantom||window.__nightmare||window.Cypress||window.__selenium_evaluate||window.__webdriver_evaluate)
+  if(auto)susp.push('automation_globals')
+  return{prototypeIntact:protoOk,nativeFunctionsIntact:true,timingConsistent:true,stackDepthNormal:true,suspiciousProperties:susp,automationDetected:auto}
+}
+
+function computeUniqueness(data){
+  const contribs=[
+    {field:'userAgent',value:data.browser.userAgent,entropyBits:8.5,contribution:.08},
+    {field:'gpu.unmaskedRenderer',value:data.gpu.unmaskedRenderer,entropyBits:6.2,contribution:.07},
+    {field:'canvas.hash',value:data.canvas.hash,entropyBits:9.1,contribution:.10},
+    {field:'webgl.contextHash',value:data.webgl.contextHash,entropyBits:8.8,contribution:.09},
+    {field:'audio.oscillatorHash',value:data.audio.oscillatorHash,entropyBits:5.7,contribution:.06},
+    {field:'fonts.hash',value:data.fonts.fingerprintHash,entropyBits:7.9,contribution:.08},
+    {field:'screen.resolution',value:`${data.screen.width}x${data.screen.height}x${data.screen.colorDepth}`,entropyBits:4.3,contribution:.04},
+    {field:'screen.dpr',value:String(data.screen.devicePixelRatio),entropyBits:2.1,contribution:.02},
+    {field:'timezone',value:data.tz.timezone,entropyBits:5.2,contribution:.05},
+    {field:'languages',value:data.tz.languages.join(','),entropyBits:3.6,contribution:.03},
+    {field:'hardwareConcurrency',value:String(data.browser.hardwareConcurrency),entropyBits:2.9,contribution:.02},
+    {field:'deviceMemory',value:String(data.browser.deviceMemory),entropyBits:2.2,contribution:.02},
+    {field:'plugins',value:data.browser.plugins.map(p=>p.name).join(','),entropyBits:5.1,contribution:.05},
+    {field:'webrtc.localIPs',value:data.webrtc.localIPs.join(','),entropyBits:6.8,contribution:.06},
+    {field:'colorGamut',value:data.screen.colorGamut,entropyBits:1.8,contribution:.01},
+    {field:'webgpu',value:String(data.gpu.webgpuSupported),entropyBits:1.5,contribution:.01},
+    {field:'storage',value:[data.storage.indexedDB,data.storage.localStorage].join(','),entropyBits:1.2,contribution:.01},
+    {field:'touch',value:`${data.touch.supported}:${data.touch.maxPoints}`,entropyBits:2.0,contribution:.02},
+  ]
+  const totalBits=contribs.reduce((s,c)=>s+c.entropyBits,0)
+  const pct=Math.min(99.99,(1-Math.pow(2,-totalBits/2))*100)
+  const allVals=contribs.map(c=>c.value).join('|')
+  const hash=fnv1a(allVals)
+  const stableVals=contribs.filter(c=>c.field!=='webrtc.localIPs').map(c=>c.value).join('|')
+  const stableHash=fnv1a(stableVals)
+  let rarity='common'
+  if(pct>99.9)rarity='unique';else if(pct>99)rarity='very_rare';else if(pct>95)rarity='rare';else if(pct>80)rarity='uncommon'
+  return{totalScore:totalBits,entropyBits:totalBits,uniquenessPercent:pct,rarity,fingerprintHash:hash,stableHash,sessionHash:fnv1a(stableHash+Date.now()),fieldContributions:contribs,populationEstimate:Math.max(1,Math.round(Math.pow(2,totalBits-17)))}
+}
+
+// ── Analysis (mock ML pipeline)
+function runAnalysis(fp){
+  const v=[fp.screen.width/3840,fp.screen.height/2160,fp.screen.devicePixelRatio/4,fp.screen.colorDepth/32,fp.browser.hardwareConcurrency/32,(fp.browser.deviceMemory||0)/64,fp.touch.maxPoints/10,fp.fonts.fontCount/200,fp.browser.plugins.length/20,fp.canvas.hash!=='unsupported'?.9:.1,fp.webgl.contextHash!=='unsupported'?.85:.1,fp.audio.supported?.85:.1,fp.gpu.maxTextureSize/32768,fp.webrtc.localIPs.length>0?.9:.1,(fp.timezone.timezoneOffset+720)/1440,fp.permissions.filter(p=>p.state==='granted').length/25]
+  const enc=[v.slice(0,4).reduce((a,b)=>a+b,0)/4,v.slice(4,8).reduce((a,b)=>a+b,0)/4,v.slice(8,12).reduce((a,b)=>a+b,0)/4,v.slice(12,16).reduce((a,b)=>a+b,0)/4]
+  const dec=[...new Array(4).fill(enc[0]),...new Array(4).fill(enc[1]),...new Array(4).fill(enc[2]),...new Array(4).fill(enc[3])].slice(0,16)
+  const reconErr=v.reduce((s,x,i)=>s+Math.pow(x-(dec[i]||0),2),0)/v.length
+  const isAnomaly=reconErr>0.15||fp.browser.isHeadless||fp.browser.webdriver||fp.antiTamper.automationDetected
+  let label='normal';if(reconErr>.5)label='bot';else if(reconErr>.3)label='spoofed';else if(isAnomaly)label='suspicious'
+  const flags=[]
+  if(fp.browser.isHeadless)flags.push('HEADLESS_BROWSER')
+  if(fp.browser.webdriver)flags.push('WEBDRIVER_DETECTED')
+  if(fp.antiTamper.automationDetected)flags.push('AUTOMATION_DETECTED')
+  if(fp.devtools.open)flags.push('DEVTOOLS_OPEN')
+  if(fp.extensions.detected.length>3)flags.push('MANY_EXTENSIONS')
+  if(fp.webrtc.localIPs.length===0)flags.push('WEBRTC_BLOCKED')
+  if(!fp.audio.supported)flags.push('AUDIO_BLOCKED')
+  if(fp.canvas.hash==='unsupported')flags.push('CANVAS_BLOCKED')
+  if(fp.antiTamper.suspiciousProperties.length>0)flags.push('API_TAMPERING')
+  if(!fp.security.crossOriginIsolated)flags.push('NOT_COI')
+  const riskScore=Math.min(1,(isAnomaly?.4:0)+flags.length*.06+(1-Math.min(1,.88+Math.random()*.1))*.2)
+  const clusterIdx=Math.floor(fp.uniqueness.entropyBits/4)%8
+  return{
+    anomaly:{isAnomaly,reconstructionError:reconErr,threshold:.15,anomalyDimensions:isAnomaly?['canvas','webgl']:[], encodedVector:enc,decodedVector:dec,confidence:isAnomaly?.87+Math.random()*.1:.94+Math.random()*.05,label},
+    identity:{similarity:.95+Math.random()*.05,cosineSimilarity:.93+Math.random()*.06,temporalDrift:Math.random()*.04,emaVector:v,calibratedScore:.88+Math.random()*.1,isNewIdentity:true,clusterAssignment:`cluster_${clusterIdx}`,faissDistances:[.02,.08,.15]},
+    cluster:{clusterId:`cluster_${clusterIdx}`,centroid:v,members:1,entropy:fp.uniqueness.entropyBits,sketchEstimate:1,anomalyScore:reconErr},
+    riskScore,flags
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════════════════════════════
+function renderRows(containerId, rows){
+  const el=document.getElementById(containerId)
+  if(!el){console.warn('[renderRows] element not found:',containerId);return}
+  el.innerHTML=rows.map(([k,v,c])=>dr(k,v,c)).join('')
+}
+
+function gel(id){return document.getElementById(id)}
+function sts(id,prop,val){const e=gel(id);if(e)e[prop]=val}
+function renderAll(fp, analysis){
+  const a=analysis, u=fp.uniqueness
+  // Header stats
+  const riskColor=a.riskScore>.7?'var(--red)':a.riskScore>.4?'var(--amber)':'var(--green)'
+  sts('hdr-hash','textContent',u.fingerprintHash)
+  sts('hdr-entropy','textContent',u.entropyBits.toFixed(2)+' bits')
+  const riskEl=gel('hdr-risk')
+  if(riskEl){riskEl.textContent=a.riskScore>.7?'HIGH':a.riskScore>.4?'MEDIUM':'LOW';riskEl.style.color=riskColor}
+  // Globe labels
+  sts('globe-entropy','textContent',u.entropyBits.toFixed(2)+' bits')
+  const globeRisk=gel('globe-risk')
+  if(globeRisk){globeRisk.textContent=a.riskScore>.7?'HIGH':a.riskScore>.4?'MED':'LOW';globeRisk.style.color=riskColor}
+  // Stat cards
+  sts('sc-entropy-val','textContent',u.entropyBits.toFixed(2))
+  sts('sc-unique-val','textContent',u.uniquenessPercent.toFixed(3)+'%')
+  const riskVal=gel('sc-risk-val')
+  if(riskVal){riskVal.textContent=(a.riskScore*100).toFixed(1)+'%';riskVal.style.color=riskColor}
+  sts('sc-fonts-val','textContent',fp.fonts.fontCount)
+  const extVal=gel('sc-ext-val')
+  if(extVal){extVal.textContent=fp.extensions.detected.length;extVal.style.color=fp.extensions.detected.length>0?'var(--amber)':'var(--green)'}
+  sts('sc-dur-val','textContent',(fp.collectionDuration/1000).toFixed(2)+'s')
+  // Identity rows
+  const rarityColors={unique:'var(--purple)',very_rare:'var(--red)',rare:'var(--amber)',uncommon:'var(--cyan)',common:'var(--text-muted)'}
+  renderRows('identity-rows',[
+    ['Visitor ID',fp.visitorId.slice(0,24)+'…','var(--cyan)'],
+    ['Fingerprint Hash',u.fingerprintHash,'var(--cyan)'],
+    ['Stable Hash',u.stableHash,'var(--text-sec)'],
+    ['Rarity',u.rarity.replace('_',' ').toUpperCase(),rarityColors[u.rarity]||'var(--text-muted)'],
+    ['1-in-N',u.populationEstimate.toLocaleString()],
+    ['Collected',new Date(fp.timestamp).toLocaleTimeString()],
+    ['Duration',fp.collectionDuration+'ms'],
+  ])
+  sts('entropy-score-val','textContent',u.entropyBits.toFixed(2)+' bits')
+  const entropyBar=gel('entropy-bar');if(entropyBar)entropyBar.style.width=Math.min(100,(u.entropyBits/25)*100)+'%'
+  // Browser rows
+  renderRows('browser-rows',[
+    ['Browser',fp.browser.browserName+' '+fp.browser.browserVersion,'var(--cyan)'],
+    ['Engine',fp.browser.engine],
+    ['Platform',fp.browser.platform],
+    ['OS',fp.os.name+' '+fp.os.version],
+    ['Architecture',fp.os.architecture],
+    ['Headless',fp.browser.isHeadless?'⚠ YES':'No',fp.browser.isHeadless?'var(--red)':'var(--green)'],
+    ['WebDriver',fp.browser.webdriver?'⚠ YES':'No',fp.browser.webdriver?'var(--red)':'var(--green)'],
+    ['Languages',fp.browser.languages.slice(0,3).join(', ')],
+    ['HW Concurrency',fp.browser.hardwareConcurrency],
+    ['Device Memory',fp.browser.deviceMemory!=null?fp.browser.deviceMemory+' GB':'Unknown'],
+    ['Plugins',fp.browser.plugins.length],
+    ['DNT',fp.browser.doNotTrack||'unset'],
+  ])
+  // Screen rows
+  renderRows('screen-rows',[
+    ['Resolution',fp.screen.width+'×'+fp.screen.height],
+    ['Available',fp.screen.availWidth+'×'+fp.screen.availHeight],
+    ['Viewport',fp.screen.innerWidth+'×'+fp.screen.innerHeight],
+    ['DPR',fp.screen.devicePixelRatio+'x'],
+    ['Color Depth',fp.screen.colorDepth+'-bit'],
+    ['Color Gamut',fp.screen.colorGamut,'var(--cyan)'],
+    ['HDR',fp.screen.isHDR?'Yes':'No',fp.screen.isHDR?'var(--green)':'var(--text-muted)'],
+    ['Orientation',fp.screen.orientation],
+    ['Touch',fp.touch.supported?fp.touch.maxPoints+' points':'Not supported',fp.touch.supported?'var(--green)':'var(--text-muted)'],
+    ['Touch Events','ontouchstart' in window?'Yes':'No'],
+  ])
+  // Network rows
+  const ips=fp.webrtc.localIPs
+  renderRows('network-rows',[
+    ['Local IPs',ips.length>0?ips.join(', '):'None (blocked)',ips.length>0?'var(--amber)':'var(--green)'],
+    ['IPv4 Leaked',fp.webrtc.ipv4Leaked?'⚠ YES':'No',fp.webrtc.ipv4Leaked?'var(--red)':'var(--green)'],
+    ['IPv6 Leaked',fp.webrtc.ipv6Leaked?'⚠ YES':'No',fp.webrtc.ipv6Leaked?'var(--red)':'var(--green)'],
+    ['mDNS',fp.webrtc.mDNSEnabled?'Enabled':'Disabled'],
+    ['LocalStorage',fp.storage.localStorage?'✓':'✗',fp.storage.localStorage?'var(--green)':'var(--red)'],
+    ['SessionStorage',fp.storage.sessionStorage?'✓':'✗',fp.storage.sessionStorage?'var(--green)':'var(--red)'],
+    ['IndexedDB',fp.storage.indexedDB?'✓':'✗',fp.storage.indexedDB?'var(--green)':'var(--red)'],
+    ['Cookies',fp.storage.cookies?'✓':'✗',fp.storage.cookies?'var(--green)':'var(--red)'],
+    ['ServiceWorker',fp.storage.serviceWorker?'✓':'✗',fp.storage.serviceWorker?'var(--green)':'var(--text-muted)'],
+    ['Cache API',fp.storage.cacheAPI?'✓':'✗',fp.storage.cacheAPI?'var(--green)':'var(--text-muted)'],
+  ])
+  // Permissions
+  const pg=gel('perm-grid');if(pg)pg.innerHTML=''
+  fp.permissions.forEach(p=>{
+    const d=document.createElement('div')
+    d.className='perm-item '+(p.state==='granted'?'perm-granted':p.state==='denied'?'perm-denied':p.state==='prompt'?'perm-prompt':'perm-unsupported')
+    const col=p.state==='granted'?'var(--green)':p.state==='denied'?'var(--red)':p.state==='prompt'?'var(--amber)':'var(--text-muted)'
+    d.innerHTML=`<span style="color:var(--text-sec)">${p.name.replace(/-/g,' ')}</span><span style="color:${col}">${p.state}</span>`
+    pg.appendChild(d)
+  })
+  // GPU rows
+  renderRows('gpu-rows',[
+    ['Vendor',fp.gpu.vendor],
+    ['Renderer',fp.gpu.renderer.slice(0,55)+'…'],
+    ['Unmasked Vendor',fp.gpu.unmaskedVendor,'var(--cyan)'],
+    ['Unmasked Renderer',(fp.gpu.unmaskedRenderer||'masked').slice(0,45),'var(--green)'],
+    ['WebGL',fp.gpu.webglVersion,'var(--cyan)'],
+    ['WebGPU',fp.gpu.webgpuSupported?'✓ Supported':'✗ Not supported',fp.gpu.webgpuSupported?'var(--green)':'var(--text-muted)'],
+    ['GLSL',fp.gpu.shadingLanguageVersion.slice(0,40)],
+    ['Max Texture',fp.gpu.maxTextureSize.toLocaleString()+'px'],
+    ['Antialiasing',fp.gpu.antialiasing?'✓':'✗',fp.gpu.antialiasing?'var(--green)':'var(--text-muted)'],
+    ['Red/Green/Blue',fp.gpu.redBits+'/'+fp.gpu.greenBits+'/'+fp.gpu.blueBits+' bits'],
+    ['Depth/Stencil',fp.gpu.depthBits+'/'+fp.gpu.stencilBits+' bits'],
+  ])
+  renderRows('webgl-hash-rows',[
+    ['Context Hash',fp.webgl.contextHash,'var(--cyan)'],
+    ['Params Hash',fp.webgl.parametersHash],
+    ['Vertex Shader',fp.webgl.vertexShaderHash],
+    ['Fragment Shader',fp.webgl.fragmentShaderHash],
+    ['Texture Hash',fp.webgl.textureHash],
+    ['Precision Hash',fp.webgl.precisionsHash],
+    ['Compressed Formats',fp.webgl.compressedTextureFormats.length],
+    ['Shader Precisions',fp.webgl.shaderPrecisions.length],
+  ])
+  // Extensions (GPU)
+  sts('ext-count','textContent',fp.gpu.extensions.length)
+  const el=gel('ext-list');if(el){el.innerHTML='';fp.gpu.extensions.forEach(e=>{const s=document.createElement('span');s.style.cssText='padding:2px 8px;border:1px solid rgba(255,255,255,.08);border-radius:4px;font-family:var(--font-mono);font-size:9px;color:var(--text-muted);background:var(--bg-elevated)';s.textContent=e;el.appendChild(s)})}
+  // ML Analysis
+  const an=a.anomaly
+  const anColor=an.label==='bot'||an.label==='spoofed'?'var(--red)':an.label==='suspicious'?'var(--amber)':'var(--green)'
+  renderRows('anomaly-rows',[
+    ['Label',an.label.toUpperCase(),anColor],
+    ['Is Anomaly',an.isAnomaly?'⚠ YES':'No',an.isAnomaly?'var(--red)':'var(--green)'],
+    ['Reconstruction Err',an.reconstructionError.toFixed(6),an.reconstructionError>.15?'var(--red)':'var(--green)'],
+    ['Threshold','0.150000'],
+    ['Confidence',(an.confidence*100).toFixed(1)+'%',an.confidence>.85?'var(--green)':'var(--amber)'],
+  ])
+  const ev=gel('encoded-vec');if(ev){ev.innerHTML='';an.encodedVector.forEach(v=>{const d=document.createElement('div');d.style.cssText='text-align:center';d.innerHTML=`<div style="height:48px;border-radius:4px;background:rgba(0,212,255,${Math.abs(v).toFixed(2)});border:1px solid rgba(0,212,255,.2);margin-bottom:4px"></div><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">${v.toFixed(3)}</div>`;ev.appendChild(d)})}
+  renderRows('identity-match-rows',[
+    ['Is New',a.identity.isNewIdentity?'◉ New Visitor':'⟲ Returning',a.identity.isNewIdentity?'var(--cyan)':'var(--amber)'],
+    ['Similarity',(a.identity.similarity*100).toFixed(3)+'%'],
+    ['Cosine Sim',a.identity.cosineSimilarity.toFixed(8)],
+    ['Temporal Drift','Δ '+a.identity.temporalDrift.toFixed(6)],
+    ['Calibrated Score',(a.identity.calibratedScore*100).toFixed(2)+'%',a.identity.calibratedScore>.85?'var(--green)':'var(--amber)'],
+    ['Cluster',a.identity.clusterAssignment,'var(--purple)'],
+  ])
+  const eb=gel('ema-vec-bars');if(eb){eb.innerHTML='';a.identity.emaVector.slice(0,16).forEach(v=>{const d=document.createElement('div');d.style.cssText=`flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.abs(v)*100}%;background:rgba(153,69,255,${.3+Math.abs(v)*.7})`;eb.appendChild(d)})}
+  renderRows('cluster-rows',[
+    ['Cluster ID',a.cluster.clusterId,'var(--purple)'],
+    ['Members',a.cluster.members],
+    ['Entropy',a.cluster.entropy.toFixed(4),'var(--cyan)'],
+    ['CMS Estimate',a.cluster.sketchEstimate],
+    ['Anomaly Score',a.cluster.anomalyScore.toFixed(4),a.cluster.anomalyScore>.3?'var(--red)':'var(--green)'],
+  ])
+  const cb=gel('centroid-bars');if(cb){cb.innerHTML='';a.cluster.centroid.slice(0,16).forEach(v=>{const d=document.createElement('div');d.style.cssText=`flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.abs(v)*100}%;background:rgba(0,255,136,${.3+Math.abs(v)*.7})`;cb.appendChild(d)})}
+  // Security
+  renderRows('security-rows',[
+    ['Secure Context',fp.security.secureContext?'✓':'✗',fp.security.secureContext?'var(--green)':'var(--red)'],
+    ['HTTPS',fp.security.https?'✓':'✗',fp.security.https?'var(--green)':'var(--amber)'],
+    ['Cross-Origin Isolated',fp.security.crossOriginIsolated?'✓':'✗ Requires COOP+COEP',fp.security.crossOriginIsolated?'var(--green)':'var(--amber)'],
+    ['COEP',fp.security.coep?'require-corp':'Not set',fp.security.coep?'var(--green)':'var(--amber)'],
+    ['COOP',fp.security.coop?'same-origin':'Not set',fp.security.coop?'var(--green)':'var(--amber)'],
+    ['Trusted Types',fp.security.trustedTypes?'✓ Supported':'Not available',fp.security.trustedTypes?'var(--green)':'var(--text-muted)'],
+    ['SRI Supported',fp.security.sriSupported?'✓':'✗',fp.security.sriSupported?'var(--green)':'var(--text-muted)'],
+    ['SharedArrayBuffer',typeof SharedArrayBuffer!=='undefined'?'✓ Available':'✗ Blocked',typeof SharedArrayBuffer!=='undefined'?'var(--green)':'var(--amber)'],
+  ])
+  renderRows('tamper-rows',[
+    ['DevTools Open',fp.devtools.open?'⚠ '+fp.devtools.method:'No',fp.devtools.open?'var(--amber)':'var(--green)'],
+    ['Console Modified',fp.devtools.consoleModified?'⚠ Yes':'No',fp.devtools.consoleModified?'var(--amber)':'var(--green)'],
+    ['Prototype Intact',fp.antiTamper.prototypeIntact?'✓':'✗',fp.antiTamper.prototypeIntact?'var(--green)':'var(--red)'],
+    ['Native Fns Intact',fp.antiTamper.nativeFunctionsIntact?'✓':'✗ Modified',fp.antiTamper.nativeFunctionsIntact?'var(--green)':'var(--red)'],
+    ['Automation',fp.antiTamper.automationDetected?'⚠ DETECTED':'None',fp.antiTamper.automationDetected?'var(--red)':'var(--green)'],
+    ['Suspicious Props',fp.antiTamper.suspiciousProperties.length>0?fp.antiTamper.suspiciousProperties.join(', '):'None',fp.antiTamper.suspiciousProperties.length>0?'var(--amber)':'var(--green)'],
+  ])
+  // Extension detect rows
+  const ed=gel('ext-detect-rows')
+  if(ed)ed.innerHTML=fp.extensions.detected.length===0
+    ?'<div style="font-family:var(--font-mono);font-size:11px;color:var(--green)">✓ No known extensions detected</div>'
+    :fp.extensions.detected.map(e=>dr(e.name,'~'+Math.round(e.confidence*100)+'% confidence','var(--amber)')).join('')
+  // WebRTC
+  renderRows('webrtc-rows',[
+    ['Supported',fp.webrtc.supported?'✓':'✗'],
+    ['Local IPs',ips.length>0?ips.join(', '):'None (blocked)',ips.length>0?'var(--amber)':'var(--green)'],
+    ['IPv4 Leaked',fp.webrtc.ipv4Leaked?'⚠ YES':'No',fp.webrtc.ipv4Leaked?'var(--red)':'var(--green)'],
+    ['IPv6 Leaked',fp.webrtc.ipv6Leaked?'⚠ YES':'No',fp.webrtc.ipv6Leaked?'var(--red)':'var(--green)'],
+    ['mDNS',fp.webrtc.mDNSEnabled?'Enabled':'Disabled'],
+    ['Media Devices',fp.webrtc.mediaDevices.length],
+  ])
+  // Risk flags
+  const rf=gel('risk-flags')
+  if(rf)rf.innerHTML=a.flags.length===0
+    ?'<span class="badge badge-green">✓ No Risk Flags</span>'
+    :a.flags.map(f=>`<span class="badge badge-red">${f.replace(/_/g,' ')}</span>`).join('')
+  // Entropy table
+  const tb=gel('entropy-table-body')
+  if(tb)tb.innerHTML=fp.uniqueness.fieldContributions.map(fc=>{
+    const lvl=fc.entropyBits>7?{label:'HIGH',col:'var(--green)'}:fc.entropyBits>4?{label:'MED',col:'var(--amber)'}:{label:'LOW',col:'var(--text-muted)'}
+    const barW=(fc.contribution*100).toFixed(1)
+    return`<tr style="border-bottom:1px solid rgba(255,255,255,.05);transition:background .15s" onmouseover="this.style.background='var(--bg-overlay)'" onmouseout="this.style.background=''">
+      <td style="padding:7px 10px;font-family:var(--font-mono);font-size:11px;color:var(--cyan)">${fc.field}</td>
+      <td style="padding:7px 10px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${String(fc.value).slice(0,30)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--cyan)">${fc.entropyBits.toFixed(2)}</td>
+      <td style="padding:7px 10px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;height:4px;background:var(--bg-overlay);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${barW}%;background:linear-gradient(to right,var(--cyan),var(--purple));border-radius:2px"></div>
+          </div>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);width:36px;text-align:right">${barW}%</span>
+        </div>
+      </td>
+      <td style="padding:7px 10px;text-align:center;font-family:var(--font-mono);font-size:10px;color:${lvl.col}">${lvl.label}</td>
+    </tr>`
+  }).join('')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// VISUALIZATIONS
+// ════════════════════════════════════════════════════════════════════════════
+
+// Three.js Globe
+let globeScene,globeRenderer,globeCamera,globeClock,globeGlobe,globeRings=[],globeParticles
+function initGlobe(){
+  const canvas=document.getElementById('globe-canvas')
+  const W=canvas.parentElement.clientWidth,H=canvas.parentElement.clientHeight
+  canvas.width=W;canvas.height=H
+  globeRenderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true})
+  globeRenderer.setPixelRatio(Math.min(devicePixelRatio,2))
+  globeRenderer.setSize(W,H,false)
+  globeRenderer.setClearColor(0,0)
+  globeScene=new THREE.Scene()
+  globeCamera=new THREE.PerspectiveCamera(45,W/H,.1,100)
+  globeCamera.position.set(0,0,4.5)
+  globeClock=new THREE.Clock()
+  // Globe
+  const g=new THREE.Mesh(new THREE.SphereGeometry(1.5,64,64),new THREE.MeshStandardMaterial({color:0x0a1628,emissive:new THREE.Color(0x001122),emissiveIntensity:.3,roughness:.8,metalness:.2,transparent:true,opacity:.85}))
+  globeGlobe=g;globeScene.add(g)
+  // Wireframe
+  globeScene.add(new THREE.Mesh(new THREE.SphereGeometry(1.52,24,24),new THREE.MeshBasicMaterial({color:0x00d4ff,wireframe:true,transparent:true,opacity:.06})))
+  // Rings
+  const rc=[0x00d4ff,0x00ff88,0xffb800,0x9945ff]
+  for(let i=0;i<4;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(1.8+i*.15,.003,8,120),new THREE.MeshBasicMaterial({color:rc[i],transparent:true,opacity:.5-i*.08}));r.rotation.x=i*Math.PI/4;r.rotation.y=i*Math.PI/8;globeScene.add(r);globeRings.push(r)}
+  // Particles
+  const N=1500,pos=new Float32Array(N*3),col=new Float32Array(N*3)
+  const cols=[new THREE.Color(0x00d4ff),new THREE.Color(0x00ff88),new THREE.Color(0x9945ff),new THREE.Color(0xffb800)]
+  for(let i=0;i<N;i++){const phi=Math.acos(2*Math.random()-1),theta=2*Math.PI*Math.random(),r=2.5+Math.random()*3;pos[i*3]=r*Math.sin(phi)*Math.cos(theta);pos[i*3+1]=r*Math.sin(phi)*Math.sin(theta);pos[i*3+2]=r*Math.cos(phi);const c=cols[i%4];col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b}
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));pg.setAttribute('color',new THREE.BufferAttribute(col,3))
+  globeParticles=new THREE.Points(pg,new THREE.PointsMaterial({size:.022,vertexColors:true,transparent:true,opacity:.6}));globeScene.add(globeParticles)
+  // Lights
+  globeScene.add(new THREE.AmbientLight(0x111122,.5))
+  const l1=new THREE.PointLight(0x00d4ff,2,8);l1.position.set(3,2,3);globeScene.add(l1)
+  const l2=new THREE.PointLight(0x00ff88,1,8);l2.position.set(-3,-2,-2);globeScene.add(l2)
+  animateGlobe()
+}
+
+function animateGlobe(){
+  requestAnimationFrame(animateGlobe)
+  if(!globeScene)return
+  const t=globeClock.getElapsedTime()
+  if(globeGlobe)globeGlobe.rotation.y=t*.08
+  globeRings.forEach((r,i)=>{r.rotation.z=t*(.2+i*.05);r.rotation.x+=.001*(i%2?1:-1)})
+  if(globeParticles){globeParticles.rotation.y=t*.02;globeParticles.rotation.x=Math.sin(t*.01)*.1}
+  if(globeCamera){globeCamera.position.y=Math.sin(t*.3)*.12;globeCamera.lookAt(0,0,0)}
+  globeRenderer.render(globeScene,globeCamera)
+}
+
+// WebGL2 Heatmap
+let heatmapGL,heatmapProg,heatmapBuf,heatmapVector=[],heatmapStart=Date.now()
+const HFRAG=`#version 300 es
+precision highp float;
+uniform float u_time;uniform float u_values[16];uniform int u_count;
+in vec2 v_uv;out vec4 fragColor;
+vec3 pal(float t){
+  if(t<.25)return mix(vec3(.004,.027,.067),vec3(0.,.831,1.),(t/.25));
+  if(t<.5)return mix(vec3(0.,.831,1.),vec3(0.,1.,.533),((t-.25)/.25));
+  if(t<.75)return mix(vec3(0.,1.,.533),vec3(1.,.722,0.),(t-.5)/.25);
+  return mix(vec3(1.,.722,0.),vec3(1.,.2,.4),(t-.75)/.25);
+}
+float hash(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+19.19);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}
+void main(){
+  int n=u_count;if(n<=0){fragColor=vec4(.04,.06,.09,1);return;}
+  float cols=ceil(sqrt(float(n)));float rows=ceil(float(n)/cols);
+  float cellW=1./cols,cellH=1./rows;
+  float col=floor(v_uv.x/cellW),row=floor(v_uv.y/cellH);
+  int idx=int(row*cols+col);if(idx>=n){fragColor=vec4(.04,.06,.09,1);return;}
+  vec2 cuv=fract(v_uv/vec2(cellW,cellH)),cc=cuv-.5;
+  float val=clamp(u_values[idx],0.,1.);
+  float dist=length(cc);float circle=1.-smoothstep(.3,.5,dist);
+  float n1=noise(cuv*6.+u_time+float(idx))*.12;val+=n1*(1.-val);
+  float scan=sin(v_uv.y*80.+u_time*4.)*.01+.99;
+  vec3 color=pal(val);
+  float r1=smoothstep(.38,.40,dist)-smoothstep(.40,.42,dist);
+  float r2=smoothstep(.44,.46,dist)-smoothstep(.46,.48,dist);
+  color+=r1*color*1.8;color+=r2*color*.4;
+  float bx=step(.04,cuv.x)*step(.04,1.-cuv.x);float by=step(.04,cuv.y)*step(.04,1.-cuv.y);
+  color=mix(vec3(0.,.083,.1*.12),color*circle*scan,bx*by);
+  float br=dot(color,vec3(.299,.587,.114));color+=color*br*.25;
+  fragColor=vec4(color,1);
+}`
+const HVERT=`#version 300 es
+precision highp float;
+in vec2 a_pos;in vec2 a_uv;out vec2 v_uv;
+void main(){gl_Position=vec4(a_pos,0,1);v_uv=a_uv;}`
+
+function initHeatmap(){
+  const c=document.getElementById('heatmap-canvas')
+  heatmapGL=c.getContext('webgl2',{alpha:true})
+  if(!heatmapGL)return
+  const gl=heatmapGL
+  const v=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(v,HVERT);gl.compileShader(v)
+  const f=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(f,HFRAG);gl.compileShader(f)
+  if(!gl.getShaderParameter(f,gl.COMPILE_STATUS)){console.warn('Heatmap shader err:',gl.getShaderInfoLog(f));return}
+  heatmapProg=gl.createProgram();gl.attachShader(heatmapProg,v);gl.attachShader(heatmapProg,f);gl.linkProgram(heatmapProg);gl.useProgram(heatmapProg)
+  const verts=new Float32Array([-1,-1,0,0,1,-1,1,0,-1,1,0,1,1,1,1,1])
+  heatmapBuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,heatmapBuf);gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW)
+  const pLoc=gl.getAttribLocation(heatmapProg,'a_pos'),uLoc=gl.getAttribLocation(heatmapProg,'a_uv')
+  gl.enableVertexAttribArray(pLoc);gl.vertexAttribPointer(pLoc,2,gl.FLOAT,false,16,0)
+  gl.enableVertexAttribArray(uLoc);gl.vertexAttribPointer(uLoc,2,gl.FLOAT,false,16,8)
+  animateHeatmap()
+}
+
+function animateHeatmap(){
+  requestAnimationFrame(animateHeatmap)
+  if(!heatmapGL||!heatmapProg)return
+  const gl=heatmapGL,c=document.getElementById('heatmap-canvas')
+  const W=c.parentElement.clientWidth,H=c.parentElement.clientHeight
+  if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H)}
+  const t=(Date.now()-heatmapStart)/1000
+  const v=heatmapVector.slice(0,16);const pad=[...v,...new Array(16-v.length).fill(0)]
+  gl.uniform1f(gl.getUniformLocation(heatmapProg,'u_time'),t)
+  gl.uniform1fv(gl.getUniformLocation(heatmapProg,'u_values'),new Float32Array(pad))
+  gl.uniform1i(gl.getUniformLocation(heatmapProg,'u_count'),v.length||4)
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.drawArrays(gl.TRIANGLE_STRIP,0,4)
+}
+
+// SVG Radar
+function renderRadar(dims){
+  const c=document.getElementById('radar-canvas')
+  if(!c)return
+  const parent=c.parentElement
+  const W=parent.clientWidth||parent.offsetWidth||480
+  const H=parent.clientHeight||parent.offsetHeight||260
+  c.width=W;c.height=H
+  const ctx=c.getContext('2d'),cx=W/2,cy=H/2,R=Math.min(W,H)/2*.72,n=dims.length
+  if(!n||R<10)return
+  ctx.clearRect(0,0,W,H)
+  // Grid rings
+  for(let r=1;r<=5;r++){ctx.beginPath();ctx.arc(cx,cy,R*r/5,0,Math.PI*2);ctx.strokeStyle='rgba(0,212,255,0.08)';ctx.lineWidth=1;ctx.stroke()}
+  // Axes
+  for(let i=0;i<n;i++){const a=i/n*Math.PI*2-Math.PI/2;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(a)*R,cy+Math.sin(a)*R);ctx.strokeStyle='rgba(0,212,255,0.15)';ctx.lineWidth=.5;ctx.stroke()}
+  // Polygon
+  ctx.beginPath()
+  dims.forEach((d,i)=>{const a=i/n*Math.PI*2-Math.PI/2,v=Math.min(1,d.value/(d.max||1))*R;const x=cx+Math.cos(a)*v,y=cy+Math.sin(a)*v;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
+  ctx.closePath();ctx.fillStyle='rgba(0,212,255,.15)';ctx.fill()
+  ctx.strokeStyle='#00d4ff';ctx.lineWidth=1.5;ctx.stroke()
+  // Vertex dots
+  dims.forEach((d,i)=>{const a=i/n*Math.PI*2-Math.PI/2,v=Math.min(1,d.value/(d.max||1))*R;ctx.beginPath();ctx.arc(cx+Math.cos(a)*v,cy+Math.sin(a)*v,3,0,Math.PI*2);ctx.fillStyle='#00ff88';ctx.fill()})
+  // Labels
+  dims.forEach((d,i)=>{const a=i/n*Math.PI*2-Math.PI/2,lr=R+14;ctx.font='8px Space Mono,monospace';ctx.fillStyle='rgba(136,146,164,.8)';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(d.label.slice(0,8),cx+Math.cos(a)*lr,cy+Math.sin(a)*lr)})
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MAIN FLOW
+// ════════════════════════════════════════════════════════════════════════════
+async function beginAnalysis(){
+  if(FP.collecting)return
+  FP.collecting=true
+  document.getElementById('start-overlay').style.display='none'
+  document.getElementById('main-content').style.display='flex'
+  document.getElementById('main-content').style.flexDirection='column'
+  document.getElementById('main-content').style.gap='16px'
+  document.getElementById('scan-btn').disabled=true
+  document.getElementById('scan-btn').textContent='⟳ Scanning...'
+
+  // Init visualizations
+  if(!globeRenderer)initGlobe()
+  if(!heatmapGL)initHeatmap()
+
+  // Set initial heatmap values
+  heatmapVector=[.3,.3,.3,.3,.3,.3,.3,.3,.3,.3,.3,.3,.3,.3,.3,.3]
+
+  try{
+    const fp=await collectAll()
+    const analysis=runAnalysis(fp)
+    FP.data=fp;FP.analysis=analysis;FP.scanCount++
+
+    // Update heatmap with real vector
+    heatmapVector=[fp.screen.width/3840,fp.screen.height/2160,fp.screen.devicePixelRatio/4,fp.screen.colorDepth/32,fp.browser.hardwareConcurrency/32,(fp.browser.deviceMemory||0)/64,fp.touch.maxPoints/10,fp.fonts.fontCount/200,fp.browser.plugins.length/20,fp.canvas.hash!=='unsupported'?.9:.1,fp.webgl.contextHash!=='unsupported'?.85:.1,fp.audio.supported?.85:.1,fp.gpu.maxTextureSize/32768,fp.webrtc.localIPs.length>0?.9:.1,(fp.timezone.timezoneOffset+720)/1440,fp.permissions.filter(p=>p.state==='granted').length/25]
+
+    // Update radar — defer to next frame so layout dimensions are ready
+    const radarDims=[{label:'Canvas',value:fp.canvas.hash!=='unsupported'?.9:.1,max:1},{label:'WebGL',value:fp.webgl.supportedExtensions.length/50,max:1},{label:'Audio',value:fp.audio.supported?.85:.1,max:1},{label:'Fonts',value:fp.fonts.fontCount/150,max:1},{label:'Screen',value:Math.min(1,fp.screen.width*fp.screen.devicePixelRatio/7680),max:1},{label:'HW',value:fp.browser.hardwareConcurrency/32,max:1},{label:'Memory',value:(fp.browser.deviceMemory||0)/16,max:1},{label:'Plugins',value:fp.browser.plugins.length/10,max:1},{label:'Storage',value:[fp.storage.localStorage,fp.storage.indexedDB,fp.storage.cacheAPI].filter(Boolean).length/3,max:1},{label:'WebRTC',value:fp.webrtc.localIPs.length>0?.9:.1,max:1},{label:'Perms',value:fp.permissions.filter(p=>p.state==='granted').length/fp.permissions.length,max:1},{label:'GPU',value:fp.gpu.webgl2Supported?(fp.gpu.webgpuSupported?1:.7):.3,max:1}]
+    requestAnimationFrame(()=>requestAnimationFrame(()=>renderRadar(radarDims)))
+
+    // WebGPU check
+    if(navigator.gpu){document.getElementById('webgpu-dot').className='dot active';document.getElementById('webgpu-label').textContent='WebGPU'}
+
+    // Header stats
+    document.getElementById('header-stats').style.display='flex'
+    renderAll(fp,analysis)
+    document.getElementById('scan-count').textContent=FP.scanCount
+    document.getElementById('progress-wrap').style.display='none'
+
+  }catch(e){
+    console.error('Collection error:',e)
+    setProgress('Error: '+e.message,0)
+  }
+
+  FP.collecting=false
+  document.getElementById('scan-btn').disabled=false
+  document.getElementById('scan-btn').textContent='↺ Re-Scan'
+}
+
+// Init default viz on load
+window.addEventListener('load',()=>{initGlobe();initHeatmap()})
+window.addEventListener('resize',()=>{
+  if(globeRenderer&&globeCamera){const c=document.getElementById('globe-canvas'),W=c.parentElement.clientWidth||480,H=c.parentElement.clientHeight||360;globeRenderer.setSize(W,H,false);globeCamera.aspect=W/H;globeCamera.updateProjectionMatrix()}
+  if(FP.data&&FP.analysis){
+    const fp=FP.data,a=FP.analysis
+    const radarDims=[{label:'Canvas',value:fp.canvas.hash!=='unsupported'?.9:.1,max:1},{label:'WebGL',value:fp.webgl.supportedExtensions.length/50,max:1},{label:'Audio',value:fp.audio.supported?.85:.1,max:1},{label:'Fonts',value:fp.fonts.fontCount/150,max:1},{label:'Screen',value:Math.min(1,fp.screen.width*fp.screen.devicePixelRatio/7680),max:1},{label:'HW',value:fp.browser.hardwareConcurrency/32,max:1},{label:'Memory',value:(fp.browser.deviceMemory||0)/16,max:1},{label:'Plugins',value:fp.browser.plugins.length/10,max:1},{label:'Storage',value:[fp.storage.localStorage,fp.storage.indexedDB,fp.storage.cacheAPI].filter(Boolean).length/3,max:1},{label:'WebRTC',value:fp.webrtc.localIPs.length>0?.9:.1,max:1},{label:'Perms',value:fp.permissions.filter(p=>p.state==='granted').length/fp.permissions.length,max:1},{label:'GPU',value:fp.gpu.webgl2Supported?(fp.gpu.webgpuSupported?1:.7):.3,max:1}]
+    requestAnimationFrame(()=>renderRadar(radarDims))
+  }
+})
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// WebGPU Radar (WGSL) — with SVG fallback already handled by renderRadar()
+// Enhanced Security Lab
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Sandboxed security tests
+const SECURITY_TESTS = [
+  {id:'csp-inline',name:'CSP Inline Block',cat:'CSP',desc:'Verifies inline scripts are blocked by CSP',
+   code:`const s=document.createElement('script');s.textContent='window.__csp_test=true';document.head.appendChild(s);return window.__csp_test?'FAIL: inline scripts NOT blocked':'PASS: inline scripts blocked'`},
+  {id:'trusted-types',name:'Trusted Types API',cat:'Trusted Types',desc:'Tests window.trustedTypes availability and policy creation',
+   code:`if(!window.trustedTypes)return'UNSUPPORTED';try{const p=trustedTypes.createPolicy('test',{createHTML:s=>s});const h=p.createHTML('<b>safe</b>');return'SUPPORTED: TrustedHTML='+(h instanceof TrustedHTML)}catch(e){return'ERROR: '+e.message}`},
+  {id:'coi-check',name:'Cross-Origin Isolated',cat:'COOP/COEP',desc:'SharedArrayBuffer + crossOriginIsolated state',
+   code:`return JSON.stringify({crossOriginIsolated:window.crossOriginIsolated,SharedArrayBuffer:typeof SharedArrayBuffer!=='undefined',Atomics:typeof Atomics!=='undefined'})`},
+  {id:'sab-test',name:'SharedArrayBuffer + Atomics',cat:'COOP/COEP',desc:'Tests SAB creation and Atomics.store/load',
+   code:`if(!window.crossOriginIsolated)return'REQUIRES_COI: set COOP+COEP headers';try{const sab=new SharedArrayBuffer(16);const arr=new Int32Array(sab);Atomics.store(arr,0,42);return Atomics.load(arr,0)===42?'PASS: SAB+Atomics working':'FAIL'}catch(e){return'ERROR: '+e.message}`},
+  {id:'storage-access',name:'Storage Partitioning',cat:'Storage',desc:'Tests localStorage accessibility',
+   code:`try{localStorage.setItem('__lab__',Date.now());const v=localStorage.getItem('__lab__');localStorage.removeItem('__lab__');return v?'ACCESSIBLE':'EMPTY'}catch(e){return'BLOCKED: '+e.name}`},
+  {id:'canvas-noise',name:'Canvas Noise Detection',cat:'CSP',desc:'Detects if canvas output is noised by privacy extensions',
+   code:`const c=document.createElement('canvas');c.width=200;c.height=50;const ctx=c.getContext('2d');ctx.fillStyle='#ff0000';ctx.fillRect(0,0,200,50);ctx.font='14px Arial';ctx.fillStyle='#fff';ctx.fillText('FP-Test-0123456789',10,30);const d1=c.toDataURL();const d2=c.toDataURL();return d1===d2?'PASS: canvas consistent (no noise detected)':'WARN: canvas inconsistent (noise/poisoning detected)'`},
+  {id:'timing-res',name:'High-Res Timer Precision',cat:'COOP/COEP',desc:'Checks if performance.now() has reduced precision (anti-timing-attack)',
+   code:`const samples=[];for(let i=0;i<200;i++){const t=performance.now();samples.push((t-Math.floor(t)).toString().length)}const max=Math.max(...samples);const avg=(samples.reduce((a,b)=>a+b,0)/samples.length).toFixed(1);return(max>10?'HIGH-RES: ':'REDUCED: ')+'max='+max+' avg='+avg+' digits'`},
+  {id:'webrtc-leak',name:'WebRTC IP Leak',cat:'Network',desc:'Tests ICE candidate IP disclosure',
+   code:`if(!window.RTCPeerConnection)return'UNSUPPORTED';const ips=[];const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});pc.createDataChannel('');const offer=await pc.createOffer();await pc.setLocalDescription(offer);await new Promise(r=>{const t=setTimeout(r,2000);pc.onicecandidate=e=>{if(!e.candidate){clearTimeout(t);r();return}const m=e.candidate.candidate.match(/(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})/g);if(m)ips.push(...m)}});pc.close();return ips.length>0?'LEAKED: '+[...new Set(ips)].join(', '):'PASS: no IP leaked'`},
+  {id:'font-access',name:'Local Font Access API',cat:'Permissions',desc:'Tests queryLocalFonts() permission',
+   code:`if(!window.queryLocalFonts)return'UNSUPPORTED: queryLocalFonts not available';try{const f=await queryLocalFonts();return'GRANTED: '+f.length+' local fonts accessible'}catch(e){return'DENIED: '+e.message}`},
+  {id:'perm-query',name:'Permissions API',cat:'Permissions',desc:'Queries camera and microphone permission state',
+   code:`if(!navigator.permissions)return'UNSUPPORTED';const ps=await Promise.all(['camera','microphone','geolocation','notifications'].map(p=>navigator.permissions.query({name:p}).then(s=>s.state).catch(()=>'error')));return JSON.stringify({camera:ps[0],microphone:ps[1],geolocation:ps[2],notifications:ps[3]})`},
+];
+
+let labResults = {};
+let labRunning = false;
+
+function initSecurityLab() {
+  const container = document.getElementById('security-lab-container');
+  if (!container || container.dataset.labInitialized) return;
+  container.dataset.labInitialized = '1';
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px">Sandboxed Security Lab</div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">Tests run inside sandboxed iframes with <code style="color:var(--cyan)">sandbox="allow-scripts"</code></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="lab-pass" style="font-family:var(--font-mono);font-size:11px;color:var(--green)">✓ 0 pass</span>
+        <span id="lab-warn" style="font-family:var(--font-mono);font-size:11px;color:var(--amber)">⚠ 0 warn</span>
+        <span id="lab-fail" style="font-family:var(--font-mono);font-size:11px;color:var(--red)">✗ 0 fail</span>
+        <button onclick="runAllTests()" style="padding:6px 16px;background:transparent;border:1px solid var(--cyan);color:var(--cyan);font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-radius:6px;cursor:pointer" id="run-all-btn">▶ Run All</button>
+        <button onclick="resetAllTests()" style="padding:6px 12px;background:transparent;border:1px solid var(--border);color:var(--text-muted);font-family:var(--font-mono);font-size:10px;border-radius:6px;cursor:pointer">Reset</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" id="lab-grid">
+      ${SECURITY_TESTS.map(t => `
+        <div class="panel" id="test-${t.id}" style="transition:border-color .2s">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+                <span style="padding:1px 7px;border-radius:3px;font-family:var(--font-mono);font-size:9px;font-weight:700;background:rgba(0,212,255,.1);color:var(--cyan);border:1px solid rgba(0,212,255,.2)">${t.cat}</span>
+                <span id="icon-${t.id}" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">○</span>
+              </div>
+              <div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text)">${t.name}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${t.desc}</div>
+            </div>
+            <button onclick="runTest('${t.id}')" id="btn-${t.id}"
+              style="padding:4px 10px;background:transparent;border:1px solid var(--border);color:var(--text-muted);font-family:var(--font-mono);font-size:10px;border-radius:5px;cursor:pointer;white-space:nowrap;flex-shrink:0">
+              ▶ Run
+            </button>
+          </div>
+          <div id="result-${t.id}" style="display:none;font-family:var(--font-mono);font-size:10px;padding:7px 10px;border-radius:5px;margin-bottom:6px;word-break:break-all"></div>
+          <details style="margin-top:4px">
+            <summary style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);cursor:pointer">View code</summary>
+            <pre style="font-family:var(--font-mono);font-size:9px;color:var(--text-sec);margin-top:6px;background:var(--bg-base);padding:8px;border-radius:4px;overflow:auto;max-height:80px">${t.code}</pre>
+          </details>
+        </div>`).join('')}
+    </div>
+    <div class="panel" style="margin-top:12px;display:none" id="lab-summary">
+      <div class="panel-header"><span class="panel-title">Security Report</span></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;text-align:center;margin-top:8px">
+        <div><div id="sum-pass" style="font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--green)">0</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px">Passed</div></div>
+        <div><div id="sum-warn" style="font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--amber)">0</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px">Warning</div></div>
+        <div><div id="sum-fail" style="font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--red)">0</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px">Failed</div></div>
+        <div><div id="sum-total" style="font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--cyan)">0</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px">Run</div></div>
+      </div>
+    </div>
+  `;
+}
+
+function sandboxRun(code) {
+  return new Promise((resolve, reject) => {
+    const msgId = Math.random().toString(36).slice(2);
+    const timeout = setTimeout(() => reject(new Error('Timeout (5s)')), 5000);
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.style.cssText = 'position:absolute;width:1px;height:1px;top:-9999px;left:-9999px;opacity:0;pointer-events:none';
+    document.body.appendChild(frame);
+    const handler = (e) => {
+      if (!e.data || e.data.msgId !== msgId) return;
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      try { document.body.removeChild(frame); } catch(e) {}
+      if (e.data.error) reject(new Error(e.data.error));
+      else resolve(String(e.data.result ?? 'undefined'));
+    };
+    window.addEventListener('message', handler);
+    // Use Blob URL to avoid all escaping issues
+    const html = [
+      '<!DOCTYPE html><html><body><script>',
+      '(async()=>{',
+      'try{',
+      'const fn=new Function(' + JSON.stringify('return(async()=>{' + code + '})()') + ');',
+      'const r=await fn();',
+      'parent.postMessage({msgId:' + JSON.stringify(msgId) + ',result:String(r??"undefined")},"*");',
+      '}catch(e){',
+      'parent.postMessage({msgId:' + JSON.stringify(msgId) + ',error:e.message},"*");',
+      '}',
+      '})();',
+      '<\/script></body></html>'
+    ].join("");
+    frame.srcdoc = html;
+  });
+}
+
+async function runTest(id) {
+  const test = SECURITY_TESTS.find(t => t.id === id);
+  if (!test) return;
+  const btn = document.getElementById('btn-' + id);
+  const icon = document.getElementById('icon-' + id);
+  const resultEl = document.getElementById('result-' + id);
+  const card = document.getElementById('test-' + id);
+  btn.disabled = true; btn.textContent = '⟳';
+  icon.textContent = '⟳'; icon.style.color = 'var(--cyan)';
+  const t0 = performance.now();
+  try {
+    const result = await sandboxRun(test.code);
+    const dur = Math.round(performance.now() - t0);
+    labResults[id] = { result, dur };
+    let status = 'pass';
+    let statusColor = 'var(--green)';
+    if (/FAIL|ERROR|LEAKED/.test(result)) { status='fail'; statusColor='var(--red)'; }
+    else if (/WARN|UNSUPPORTED|REQUIRES|REDUCED|DENIED/.test(result)) { status='warn'; statusColor='var(--amber)'; }
+    icon.textContent = status==='pass'?'✓':status==='fail'?'✗':'⚠';
+    icon.style.color = statusColor;
+    resultEl.style.display = 'block';
+    resultEl.style.cssText = `display:block;font-family:var(--font-mono);font-size:10px;padding:7px 10px;border-radius:5px;margin-bottom:6px;word-break:break-all;background:${statusColor}11;border:1px solid ${statusColor}33;color:${statusColor}`;
+    resultEl.textContent = result;
+    card.style.borderColor = statusColor + '66';
+    const durDiv = document.createElement('div');
+    durDiv.style.cssText = 'font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-align:right;margin-top:4px';
+    durDiv.textContent = dur + 'ms';
+    resultEl.after(durDiv);
+  } catch(e) {
+    labResults[id] = { result: 'Error: '+e.message, dur: Math.round(performance.now()-t0) };
+    icon.textContent = '✗'; icon.style.color = 'var(--red)';
+    resultEl.style.cssText = `display:block;font-family:var(--font-mono);font-size:10px;padding:7px 10px;border-radius:5px;background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);color:var(--red)`;
+    resultEl.textContent = 'Error: ' + e.message;
+    card.style.borderColor = 'rgba(255,51,102,.5)';
+  }
+  btn.disabled = false; btn.textContent = '▶ Run';
+  updateLabStats();
+}
+
+async function runAllTests() {
+  labRunning = true;
+  const btn = document.getElementById('run-all-btn');
+  btn.disabled = true; btn.textContent = '⟳ Running...';
+  for (const test of SECURITY_TESTS) {
+    await runTest(test.id);
+    await new Promise(r => setTimeout(r, 80));
+  }
+  btn.disabled = false; btn.textContent = '▶ Run All';
+  labRunning = false;
+  document.getElementById('lab-summary').style.display = 'block';
+}
+
+function resetAllTests() {
+  labResults = {};
+  SECURITY_TESTS.forEach(t => {
+    const icon = document.getElementById('icon-' + t.id);
+    const result = document.getElementById('result-' + t.id);
+    const card = document.getElementById('test-' + t.id);
+    const btn = document.getElementById('btn-' + t.id);
+    if (icon) { icon.textContent = '○'; icon.style.color = 'var(--text-muted)'; }
+    if (result) { result.style.display='none'; result.textContent=''; }
+    if (card) { card.style.borderColor=''; }
+    if (btn) { btn.textContent='▶ Run'; }
+    // Remove duration divs
+    const durDivs = document.getElementById('test-' + t.id)?.querySelectorAll('div[style*="9px"]');
+    durDivs?.forEach(d => d.remove());
+  });
+  document.getElementById('lab-summary').style.display = 'none';
+  updateLabStats();
+}
+
+function updateLabStats() {
+  let pass=0,warn=0,fail=0;
+  SECURITY_TESTS.forEach(t => {
+    const r = labResults[t.id]?.result;
+    if (!r) return;
+    if (/FAIL|ERROR|LEAKED/.test(r)) fail++;
+    else if (/WARN|UNSUPPORTED|REQUIRES|REDUCED|DENIED/.test(r)) warn++;
+    else pass++;
+  });
+  document.getElementById('lab-pass').textContent = '✓ '+pass+' pass';
+  document.getElementById('lab-warn').textContent = '⚠ '+warn+' warn';
+  document.getElementById('lab-fail').textContent = '✗ '+fail+' fail';
+  document.getElementById('sum-pass').textContent = pass;
+  document.getElementById('sum-warn').textContent = warn;
+  document.getElementById('sum-fail').textContent = fail;
+  document.getElementById('sum-total').textContent = pass+warn+fail;
+}
+
+// ── Override switchTab to init security lab on first visit
+const _origSwitchTab = window.switchTab;
+window.switchTab = function(name, btn) {
+  _origSwitchTab(name, btn);
+  if (name === 'security') {
+    initSecurityLab();
+    // Fix grid display for security tab (it was set to grid by switchTab but lab overwrites innerHTML)
+    document.getElementById('tab-security').style.display = 'block';
+  }
+};
+
+// ── History tab
+const scanHistory = [];
+
+function addToHistory(fp, analysis) {
+  scanHistory.unshift({
+    hash: fp.uniqueness.fingerprintHash,
+    stableHash: fp.uniqueness.stableHash,
+    browser: fp.browser.browserName + ' ' + fp.browser.browserVersion,
+    os: fp.os.name + ' ' + fp.os.version,
+    riskScore: analysis.riskScore,
+    anomalyScore: analysis.anomaly.reconstructionError,
+    isAnomaly: analysis.anomaly.isAnomaly,
+    entropy: fp.uniqueness.entropyBits,
+    uniqueness: fp.uniqueness.uniquenessPercent,
+    rarity: fp.uniqueness.rarity,
+    time: new Date().toLocaleTimeString(),
+    timestamp: Date.now(),
+  });
+  if (scanHistory.length > 20) scanHistory.pop();
+  renderHistory();
+  renderDriftChart();
+}
+
+function renderHistory() {
+  const c = document.getElementById('history-list');
+  if (!c) return;
+  if (scanHistory.length === 0) {
+    c.innerHTML = '<div style="text-align:center;padding:32px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">No history — run a scan first</div>';
+    return;
+  }
+  const rarityColor = {unique:'var(--purple)',very_rare:'var(--red)',rare:'var(--amber)',uncommon:'var(--cyan)',common:'var(--text-muted)'};
+  c.innerHTML = scanHistory.map((e,i) => `
+    <div class="panel" style="display:flex;align-items:center;gap:12px;margin-bottom:8px;${i===0?'border-color:rgba(0,212,255,.4)':''}">
+      <div class="dot ${e.isAnomaly?'error':'active'}"></div>
+      <div style="flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:8px;font-family:var(--font-mono);font-size:10px">
+        <div><div style="color:var(--text-muted)">Hash</div><div style="color:var(--cyan)">${e.hash}</div></div>
+        <div><div style="color:var(--text-muted)">Browser</div><div>${e.browser}</div></div>
+        <div><div style="color:var(--text-muted)">Entropy</div><div style="color:var(--cyan)">${e.entropy.toFixed(2)} bits</div></div>
+        <div><div style="color:var(--text-muted)">Risk</div><div style="color:${e.riskScore>.5?'var(--red)':e.riskScore>.25?'var(--amber)':'var(--green)'}">${(e.riskScore*100).toFixed(1)}%</div></div>
+        <div><div style="color:var(--text-muted)">Time</div><div style="color:var(--text-muted)">${e.time}</div></div>
+      </div>
+      ${i===0?'<span class="badge badge-cyan" style="flex-shrink:0">current</span>':e.isAnomaly?'<span class="badge badge-red" style="flex-shrink:0">anomaly</span>':''}
+    </div>`).join('');
+}
+
+function renderDriftChart() {
+  const canvas = document.getElementById('drift-canvas');
+  if (!canvas || scanHistory.length < 2) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.parentElement.clientWidth;
+  const H = canvas.height = 100;
+  ctx.clearRect(0, 0, W, H);
+  const data = [...scanHistory].reverse();
+  const n = data.length;
+  const risks = data.map(e => e.riskScore);
+  const anoms = data.map(e => e.anomalyScore);
+  const maxR = Math.max(...risks, .01), maxA = Math.max(...anoms, .01);
+  const xOf = i => (i / (n-1)) * W;
+  const yOf = (v, max) => H - (v/max) * H * .8 - H * .05;
+  // Grid
+  ctx.strokeStyle = 'rgba(0,212,255,.06)'; ctx.lineWidth = 1;
+  [.25,.5,.75,1].forEach(g => { ctx.beginPath(); ctx.moveTo(0,H*(.05+.8*(1-g))); ctx.lineTo(W,H*(.05+.8*(1-g))); ctx.stroke(); });
+  // Risk area
+  ctx.beginPath(); ctx.moveTo(xOf(0),H);
+  data.forEach((_,i) => ctx.lineTo(xOf(i),yOf(risks[i],maxR)));
+  ctx.lineTo(xOf(n-1),H); ctx.closePath();
+  const grd = ctx.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0,'rgba(255,51,102,.3)'); grd.addColorStop(1,'rgba(255,51,102,.02)');
+  ctx.fillStyle = grd; ctx.fill();
+  // Risk line
+  ctx.beginPath(); ctx.moveTo(xOf(0),yOf(risks[0],maxR));
+  for(let i=1;i<n;i++){const cx=(xOf(i-1)+xOf(i))/2;ctx.bezierCurveTo(cx,yOf(risks[i-1],maxR),cx,yOf(risks[i],maxR),xOf(i),yOf(risks[i],maxR));}
+  ctx.strokeStyle='#ff3366'; ctx.lineWidth=1.5; ctx.setLineDash([]); ctx.stroke();
+  // Anomaly dashed
+  ctx.beginPath(); ctx.moveTo(xOf(0),yOf(anoms[0],maxA));
+  for(let i=1;i<n;i++){const cx=(xOf(i-1)+xOf(i))/2;ctx.bezierCurveTo(cx,yOf(anoms[i-1],maxA),cx,yOf(anoms[i],maxA),xOf(i),yOf(anoms[i],maxA));}
+  ctx.strokeStyle='#ffb800'; ctx.lineWidth=1; ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
+  // Dots
+  data.forEach((e,i) => {
+    ctx.beginPath(); ctx.arc(xOf(i),yOf(risks[i],maxR),e.isAnomaly?5:3,0,Math.PI*2);
+    ctx.fillStyle=e.isAnomaly?'#ff3366':e.riskScore>.5?'#ffb800':'#00ff88'; ctx.fill();
+  });
+}
+
+function initHistoryTab() {
+  const c = document.getElementById('tab-history');
+  if (!c || c.dataset.historyInit) return;
+  c.dataset.historyInit = '1';
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em">Scan History</span>
+      <button onclick="scanHistory.length=0;renderHistory();renderDriftChart()" style="padding:4px 12px;background:transparent;border:1px solid var(--border);color:var(--text-muted);font-family:var(--font-mono);font-size:10px;border-radius:5px;cursor:pointer">Clear</button>
+    </div>
+    <div class="panel-el" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:10px;margin-bottom:6px">
+        <span style="font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em">Temporal Drift</span>
+        <div style="display:flex;gap:12px">
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:16px;height:2px;background:var(--red)"></span>Risk Score</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:16px;border-top:2px dashed var(--amber)"></span>Anomaly</span>
+        </div>
+      </div>
+      <div style="position:relative;height:100px"><canvas id="drift-canvas" style="width:100%;height:100%;display:block"></canvas>
+        <div id="drift-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">Need 2+ scans to show drift</div>
+      </div>
+    </div>
+    <div id="history-list"></div>
+  `;
+  renderHistory();
+}
+
+// ── Override switchTab again to handle history too
+const _origSwitchTab2 = window.switchTab;
+window.switchTab = function(name, btn) {
+  _origSwitchTab2(name, btn);
+  if (name === 'history') {
+    initHistoryTab();
+    document.getElementById('tab-history').style.display = 'block';
+  }
+};
+
+// ── Add history tab to DOM
+document.addEventListener('DOMContentLoaded', () => {
+  // Add History tab button and panel
+  const tabBar = document.querySelector('.tab-bar');
+  const histBtn = document.createElement('button');
+  histBtn.className = 'tab';
+  histBtn.textContent = 'History';
+  histBtn.onclick = () => switchTab('history', histBtn);
+  tabBar.appendChild(histBtn);
+
+  // Add history panel after entropy panel
+  const entropyPanel = document.getElementById('tab-entropy');
+  const histPanel = document.createElement('div');
+  histPanel.id = 'tab-history';
+  histPanel.style.display = 'none';
+  entropyPanel.after(histPanel);
+});
+
+// ── Hook into beginAnalysis to track history
+const _origBegin = window.beginAnalysis;
+window.beginAnalysis = async function() {
+  await _origBegin();
+  if (FP.data && FP.analysis) {
+    addToHistory(FP.data, FP.analysis);
+  }
+};
+
+// ── WebGPU detection and banner update
+(async () => {
+  if (!navigator.gpu) return;
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) return;
+    const info = await adapter.requestAdapterInfo?.().catch(() => null);
+    const dotEl = document.getElementById('webgpu-dot');
+    const lblEl = document.getElementById('webgpu-label');
+    if (dotEl) dotEl.className = 'dot active';
+    if (lblEl) lblEl.textContent = 'WebGPU ✓';
+    console.log('[WebGPU] Adapter:', info?.vendor || 'available');
+  } catch(e) {}
+})();
+</script>
+
+</body>
+</html>

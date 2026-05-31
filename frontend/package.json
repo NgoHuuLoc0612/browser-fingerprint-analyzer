@@ -1,0 +1,45 @@
+{
+  "name": "browser-fingerprint-analyzer-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.5.1",
+    "@trpc/client": "^10.45.2",
+    "@unocss/nuxt": "^0.60.4",
+    "@vueuse/core": "^10.9.0",
+    "@vueuse/nuxt": "^10.9.0",
+    "motion": "^10.18.0",
+    "nuxt": "^3.11.2",
+    "pinia": "^2.1.7",
+    "radix-vue": "^1.8.4",
+    "three": "^0.163.0",
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0",
+    "monaco-editor": "^0.47.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.2.2",
+    "lucide-vue-next": "^0.372.0",
+    "superjson": "^2.2.1",
+    "zod": "^3.23.4",
+    "comlink": "^4.4.1"
+  },
+  "devDependencies": {
+    "@nuxt/devtools": "^1.2.0",
+    "@types/node": "^20.12.7",
+    "@types/three": "^0.163.0",
+    "typescript": "^5.4.5",
+    "unocss": "^0.60.4",
+    "@unocss/preset-uno": "^0.60.4",
+    "@unocss/preset-wind": "^0.60.4",
+    "@unocss/preset-attributify": "^0.60.4",
+    "@unocss/preset-icons": "^0.60.4",
+    "@unocss/transformer-directives": "^0.60.4"
+  }
+}
